@@ -239,11 +239,14 @@ def main():
     xp_txt = c(CREAM, f"{ag['xp']:,} XP") + c(DIM, tail_txt)
     if now - ag.get("gain_t", 0) < 8 and ag.get("last_gain"):
         xp_txt += " " + c(GREEN, b(f"+{ag['last_gain']} XP")) + c(DIM, f" ×{mult:g}")
-    # alignment: ☀ light ←→ dark ☠
-    a01 = (align + 100) / 200
-    acol = GREEN if align >= 20 else (GOLD if align >= -20 else RED)
-    abar = c(acol, "☀ ") + bar(a01, 8, "▰", "▱", acol) + c(acol, " ☠") if align < 20 else c(acol, "☀ ") + bar(a01, 8, "▰", "▱", acol) + c(DIM, " ☠")
-    line1 = f"{abar} {c(acol, f'{align:+d}')}  {head}  {bar(frac, 12, '▰', '▱', col)} {xp_txt}"
+    # alignment slider: dark end on the left, light on the right; the white marker sits at the
+    # agent's alignment and points the way it last moved ( > toward the light, < toward the dark )
+    W = 9
+    pos = round((align + 100) / 200 * (W - 1))
+    mark = "<" if ag.get("align_dir", 1) < 0 else ">"
+    abar = c(244, "-" * pos) + c(255, b(mark)) + c(244, "-" * (W - 1 - pos))
+    acol = 255
+    line1 = f"{abar} {c(244, f'{align:+d}')}  {head}  {bar(frac, 12, '▰', '▱', col)} {xp_txt}"
 
     # ---- line 2: kyber · hyperdrive · model · branch · session · credits
     k = s["kyber"]; crystals = "".join("◆" if i < k % 12 else "◇" for i in range(12))

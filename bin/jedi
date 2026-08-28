@@ -116,6 +116,7 @@ elif op == "judge":
     for sn in sins:            dark.append((sn, 15))
     d_light = sum(light.get(m[0], 0) for m in merits); d_dark = sum(x[1] for x in dark)
     before = ag.get("align", S.ALIGN_START); ag["align"] = max(-100, min(100, before + d_light - d_dark))
+    if ag["align"] != before: ag["align_dir"] = 1 if ag["align"] > before else -1
     if d_light or d_dark:
         S.ledger_append({"kind": "align", "agent": agent, "session": sid, "delta": ag["align"] - before,
                          "light": d_light, "dark": [x[0] for x in dark]})
