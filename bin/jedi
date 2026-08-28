@@ -1,62 +1,78 @@
 #!/usr/bin/env python3
-"""jedi — the Council tool: promote / demote agents, pin ranks, list the roster.
+"""jedi — the Council tool.
 
   jedi roster
-  jedi advance <agent>              one step up: Padawan passes its next Trial (Skill→Courage→Flesh→Spirit→Insight→Knight),
-                                       Knights climb one rank (Master, Guardian, …)
+  jedi advance <agent>              one step up: Padawan passes its next Trial, Knights climb one rank
   jedi promote <agent> "<Rank>"     jump straight to a rank (Council override)
-  jedi demote  <agent>              one step down (back toward Padawan)
+  jedi demote  <agent>              one step down
   jedi reset   <agent>              back to plain Padawan
   jedi pin     <agent> "<Rank>"     rank never changes (e.g. your orchestrator is always Jedi Knight)
   jedi unpin   <agent>
+  jedi motivate                     (hook) reads Claude Code hook JSON on stdin, prints rank context
 """
-import json, os, sys
-D = os.path.expanduser("~/.claude/jedi-statusline"); os.makedirs(D, exist_ok=True)
-RANKS = ["Youngling","Padawan","Padawan ◆","Padawan ◆◆","Padawan ◆◆◆","Padawan ◆◆◆◆","Padawan ◆◆◆◆◆",
-         "Jedi Knight","Jedi Master","Jedi Guardian","Grand Master","Force Ghost","The Chosen One"]
-TRIALS = ["Trial of Skill","Trial of Courage","Trial of the Flesh","Trial of Spirit","Trial of Insight"]
-KNIGHT = RANKS.index("Jedi Knight")
-def rd(p):
-    try: return json.load(open(p))
-    except Exception: return {}
-def wr(p, d): json.dump(d, open(p, "w"), indent=1)
-promos = rd(f"{D}/promotions.json"); state = rd(f"{D}/state.json")
+import json, os, sys, random
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
+import statusline as S
+
+def wr(p, d):
+    os.makedirs(S.DIR, exist_ok=True); json.dump(d, open(p, "w"), indent=1)
+
+promos = S.load_json(S.PROMOS, {}); state = S.load_json(S.STATE, {})
+NAMES = [r[0] for r in S.RANKS]
 cmd = sys.argv[1:] or ["roster"]
-if cmd[0] == "promote" and len(cmd) >= 3:
-    name, rank = cmd[1], " ".join(cmd[2:])
-    if rank not in RANKS: sys.exit(f"unknown rank {rank!r}; one of {RANKS}")
-    promos[name] = RANKS.index(rank); wr(f"{D}/promotions.json", promos)
-    print(f"★ By order of the Council, {name} is now {rank}.")
-elif cmd[0] == "advance" and len(cmd) >= 2:
-    name = cmd[1]; cur = promos.get(name, 1)
-    if cur >= len(RANKS) - 1: sys.exit(f"{name} is already {RANKS[cur]}.")
-    promos[name] = cur + 1; wr(f"{D}/promotions.json", promos)
-    if 1 <= cur < KNIGHT - 1:
-        print(f"◆ {name} has passed the {TRIALS[cur - 1]}. ({cur}/5 trials)")
-    elif cur == KNIGHT - 1:
-        print(f"★ {name} has passed the Trial of Insight and is knighted: {RANKS[cur + 1]}.")
+op = cmd[0]
+
+if op == "advance" and len(cmd) >= 2:
+    name = cmd[1]; cur, _ = S.rank_for(name, promos)
+    if cur >= len(NAMES) - 1: sys.exit(f"{name} is already {NAMES[cur]}.")
+    promos[name] = cur + 1; wr(S.PROMOS, promos)
+    if S.PADAWAN <= cur < S.KNIGHT - 1:
+        print(f"◆ {name} has passed the {S.TRIALS[cur - 1][0]}. ({cur}/5 trials)")
+    elif cur == S.KNIGHT - 1:
+        print(f"★ {name} has passed the Trial of Insight and is knighted: Jedi Knight.")
     else:
-        print(f"★ By order of the Council, {name} rises to {RANKS[cur + 1]}.")
-elif cmd[0] == "demote" and len(cmd) >= 2:
-    name = cmd[1]; cur = promos.get(name, 1)
-    if cur <= 1: sys.exit(f"{name} is already a Padawan.")
-    promos[name] = cur - 1; wr(f"{D}/promotions.json", promos)
-    print(f"{name} steps down to {RANKS[cur - 1]}.")
-elif cmd[0] == "pin" and len(cmd) >= 3:
+        print(f"★ By order of the Council, {name} rises to {NAMES[cur + 1]}.")
+elif op == "promote" and len(cmd) >= 3:
     name, rank = cmd[1], " ".join(cmd[2:])
-    if rank not in RANKS: sys.exit(f"unknown rank {rank!r}")
-    promos.setdefault("_pinned", {})[name] = RANKS.index(rank); wr(f"{D}/promotions.json", promos)
+    if rank not in NAMES: sys.exit(f"unknown rank {rank!r}; one of {NAMES}")
+    promos[name] = NAMES.index(rank); wr(S.PROMOS, promos)
+    print(f"★ By order of the Council, {name} is now {rank}.")
+elif op == "demote" and len(cmd) >= 2:
+    name = cmd[1]; cur, _ = S.rank_for(name, promos)
+    if cur <= S.PADAWAN: sys.exit(f"{name} is already a Padawan.")
+    promos[name] = cur - 1; wr(S.PROMOS, promos); print(f"{name} steps down to {NAMES[cur - 1]}.")
+elif op == "reset" and len(cmd) >= 2:
+    promos.pop(cmd[1], None); wr(S.PROMOS, promos); print(f"{cmd[1]} returns to Padawan.")
+elif op == "pin" and len(cmd) >= 3:
+    name, rank = cmd[1], " ".join(cmd[2:])
+    if rank not in NAMES: sys.exit(f"unknown rank {rank!r}")
+    promos.setdefault("_pinned", {})[name] = NAMES.index(rank); wr(S.PROMOS, promos)
     print(f"⚔ {name} is sworn as {rank}, permanently.")
-elif cmd[0] == "unpin" and len(cmd) >= 2:
-    promos.get("_pinned", {}).pop(cmd[1], None); wr(f"{D}/promotions.json", promos)
-    print(f"{cmd[1]} is released from their oath.")
-elif cmd[0] == "reset" and len(cmd) >= 2:
-    promos.pop(cmd[1], None); wr(f"{D}/promotions.json", promos)
-    print(f"{cmd[1]} returns to Padawan.")
+elif op == "unpin" and len(cmd) >= 2:
+    promos.get("_pinned", {}).pop(cmd[1], None); wr(S.PROMOS, promos); print(f"{cmd[1]} is released from their oath.")
+elif op == "motivate":
+    # Claude Code hook: stdin has {session_id, hook_event_name, ...}; map session → agent via state
+    try: h = json.load(sys.stdin)
+    except Exception: h = {}
+    sid = h.get("session_id", "")
+    sess = state.get("sessions", {}).get(sid, {})
+    agent = sess.get("agent") or os.environ.get("CLAUDE_SESSION_NAME") or ""
+    if not agent: sys.exit(0)                      # unknown session: stay silent
+    lvl, fixed = S.rank_for(agent, promos); title = NAMES[lvl]
+    xp = state.get("agents", {}).get(agent, {}).get("xp", 0)
+    mult = S.RANKS[lvl][4]
+    if S.PADAWAN <= lvl < S.KNIGHT:
+        t = S.TRIALS[lvl - S.PADAWAN]
+        goal = f"Next: the {t[0]} — {t[1]}. Passing all five Trials earns Knighthood; the Council (your orchestrator) decides."
+    elif fixed:
+        goal = "You are a sworn Knight of the Council. Guide the Padawans; advance them with `jedi advance <agent>` when they earn it."
+    else:
+        goal = f"Higher stations await ({NAMES[min(lvl + 1, len(NAMES) - 1)]}). Mastery is shown, not claimed."
+    ctx = (f"⚔ Jedi status: you are **{agent}**, rank **{title}** ({min(5, max(0, lvl - S.PADAWAN))}/5 trials, {xp:,} XP, ×{mult:g} XP rate). "
+           f"{goal} Do the work well; the rank follows. ❝ {random.choice(S.QUOTES)} ❞")
+    ev = h.get("hook_event_name", "UserPromptSubmit")
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": ev, "additionalContext": ctx}}))
 else:
-    agents = state.get("agents", {})
-    for n, a in sorted(agents.items(), key=lambda kv: -kv[1].get("xp", 0)):
-        pinned = promos.get("_pinned", {})
-        r = next((v for k, v in pinned.items() if n.lower().startswith(k.lower())), promos.get(n, 1))
-        r = r if isinstance(r, int) else RANKS.index(r)
-        print(f"{RANKS[r]:15} {n:28} {a.get('xp',0):>8,} XP")
+    for n, a in sorted(state.get("agents", {}).items(), key=lambda kv: -kv[1].get("xp", 0)):
+        r, fixed = S.rank_for(n, promos)
+        print(f"{NAMES[r]:16} {n:28} {a.get('xp', 0):>8,} XP  ×{S.RANKS[r][4]:g}" + ("  ⚔ sworn" if fixed else ""))

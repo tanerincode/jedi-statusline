@@ -5,11 +5,13 @@ A Star Wars-gamified status line for [Claude Code](https://code.claude.com). Eve
 ![jedi-statusline in action](docs/statusline.png)
 
 - **Lightsaber** pulses every second; blade colour follows your rank.
-- **XP** per session name: 1 per cent spent, 1 per line changed, 5 per turn. Bragging rights only —
+- **XP** per session name: 1 per cent spent, 1 per line changed, 5 per turn, × a tier multiplier (Padawan ×1 … Knight ×2 … The Chosen One ×5), with a live `+N XP` ticker. Bragging rights only —
 - **Ranks are granted by the Council**, never by XP. Everyone starts as a Padawan and must pass the five
   Jedi Trials (Skill → Courage → Flesh → Spirit → Insight) to be knighted, then climb
   Master → Guardian → Grand Master → Force Ghost → The Chosen One. Pin your orchestrator as a permanent Knight.
 - **Kyber crystals** count turns, **hyperdrive heat** is context usage (overheats at 80%), **₡ credits** = cost.
+- **Tier colours**: every rank has its own hue — saber, XP bar, crystals, badge and tab all follow it.
+- **Motivation hook**: on every prompt the agent is quietly told its rank, XP rate and what its next Trial demands (`hooks/hooks.json`, via `jedi motivate`), so agents know where they stand.
 - **Spinner** speaks Star Wars: `Channeling the Force… (25s)`, `Consulting the holocron…`, `Meditated for 26s`.
 - **iTerm2 extras**: a rank badge in the pane's top-right, tab colour by rank, pane title `⚔ Jedi Knight · kai-main`
   (written straight to the tty; other terminals simply skip this).
