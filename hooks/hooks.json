@@ -28,7 +28,7 @@
           {
             "type": "command",
             "command": "python3 ${CLAUDE_PLUGIN_ROOT}/bin/jedi judge",
-            "timeout": 10
+            "timeout": 15
           }
         ]
       }

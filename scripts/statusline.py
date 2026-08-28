@@ -9,7 +9,7 @@ Ranks are granted by the Council (bin/jedi), never by XP.
 """
 import json, os, sys, time, random, subprocess, base64
 
-DIR    = os.path.expanduser("~/.claude/jedi-statusline")
+DIR    = os.environ.get("JEDI_DIR") or os.path.expanduser("~/.claude/jedi-statusline")
 STATE  = f"{DIR}/state.json"
 PROMOS = f"{DIR}/promotions.json"
 LEDGER = f"{DIR}/ledger.jsonl"
@@ -259,6 +259,8 @@ def main():
     # ---- line 2: kyber · hyperdrive · model · branch · session · credits
     k = s["kyber"]; crystals = "".join("◆" if i < k % 12 else "◇" for i in range(12))
     kyber = c(col, crystals) + c(DIM, f" {k} turns") + (c(col, f" ×{k // 12}") if k >= 12 else "")
+    if used is not None and used >= 80 and not s.get("flesh"):
+        s["flesh"] = True; ev = ag.setdefault("evidence", {}); ev["flesh"] = ev.get("flesh", 0) + 1
     if used is None: heat = c(DIM, "hyperdrive cold")
     else:
         hc = GREEN if used < 50 else (GOLD if used < 80 else RED)
