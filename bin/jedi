@@ -104,7 +104,7 @@ elif op == "judge":
     sins = sorted(set(sins))
     if tools == 0 and not counsel_fail and not sins: wr(S.STATE, state); sys.exit(0)   # pure chat turn: nothing to judge
     merits = []
-    if errors == 0:                 merits.append(("Clean run", 15, "no failed tool calls"))
+    if errors == 0 and tools:       merits.append(("Clean run", 15, "no failed tool calls"))
     if tools <= 6 and edits:        merits.append(("Short way", 20, f"done in {tools} tool calls"))
     if tested:                      merits.append(("Wise way", 30, "verified with tests/typecheck"))
     if reviewed:                    merits.append(("Insight", 10, "reviewed the diff before finishing"))
@@ -140,10 +140,20 @@ elif op == "judge":
                       "dark": [x[0] for x in dark], "align": ag["align"], "align_delta": ag["align"] - before}
     wr(S.STATE, state)
     # tell the agent how the Council judged it (Stop hooks may print plain text back into context)
-    if merits or missed:
+    if merits or missed or dark:
         parts = [f"{m[0]} +{int(m[1]*mult)} ({m[2]})" for m in merits]
         txt = f"⚔ Council judgement for this job: +{gained} XP" + (" · " + " · ".join(parts) if parts else "") + (f" · Missed: {', '.join(missed)}" if missed else "")
+        if d_dark:
+            txt += f"\n☠ The dark side stirs ({ag['align'] - before:+d} → alignment {ag['align']:+d}): " + ", ".join(x[0] for x in dark) + "."
+            if ag["align"] <= -50 and before > -50: txt += " You have fallen. The Council watches; redemption comes only through clean, verified work."
+            elif ag["align"] <= -20 and before > -20: txt += " You are tempted. Slow down, run the tests, fix what you broke."
+        elif d_light: txt += f"\n☀ The light grows (+{d_light} → alignment {ag['align']:+d})."
         print(txt)
+elif op == "redeem" and len(cmd) >= 2:
+    name = cmd[1]; ag = state.setdefault("agents", {}).setdefault(name, {"xp": 0, "levelup_at": 0, "rank": None})
+    before = ag.get("align", S.ALIGN_START); ag["align"] = min(100, before + 40); ag["align_dir"] = 1; wr(S.STATE, state)
+    S.ledger_append({"kind": "align", "agent": name, "delta": ag["align"] - before, "by": "redeem"})
+    print(f"☀ The Council shows mercy: {name} returns toward the light ({before:+d} → {ag['align']:+d}).")
 elif op == "ledger":
     who = cmd[1] if len(cmd) > 1 and not cmd[1].isdigit() else None
     n = int(cmd[-1]) if cmd[-1].isdigit() else 20
