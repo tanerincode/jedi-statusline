@@ -79,7 +79,6 @@ QUOTES = [
     "Great, kid. Don't get cocky. — Han Solo",
     "The greatest teacher, failure is. — Yoda",
     "This is the way. — Din Djarin",
-    "I've got a bad feeling about this. — everyone",
     "It's a trap! — Admiral Ackbar",
 ]
 
