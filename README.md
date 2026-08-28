@@ -1,31 +1,12 @@
 # jedi-statusline
 
-A Star Wars-gamified status line for [Claude Code](https://code.claude.com). Every session becomes a Jedi.
+A Star Wars-gamified status line for [Claude Code](https://code.claude.com). Every session becomes a Jedi — with a rank, XP, and an alignment that slips toward the dark side when the work gets sloppy.
 
 ![jedi-statusline — four agents, one Council](docs/hero.svg)
 
 ![a promotion](docs/promotion.svg)
 
-**Why:** agents that supervise other agents need something at stake. jedi-statusline makes every Claude Code session a Jedi with a rank, XP and an alignment — and judges each finished job from the transcript: did it run the tests it claims it ran? did it hand you a command with a placeholder still in it? did it force-push? Sloppy work drifts toward the dark side, for everyone to see.
-
-- **Lightsaber** pulses every second; blade colour follows your rank.
-- **XP** per session name: 1 per cent spent, 1 per line changed, 5 per turn, × a tier multiplier (Padawan ×1 … Knight ×2 … The Chosen One ×5), with a live `+N XP` ticker. Bragging rights only —
-- **Ranks are granted by the Council**, never by XP. Everyone starts as a Padawan and must pass the five
-  Jedi Trials (Skill → Courage → Flesh → Spirit → Insight) to be knighted, then climb
-  Master → Guardian → Grand Master → Force Ghost → The Chosen One. Pin your orchestrator as a permanent Knight.
-- **Kyber crystals** count turns, **hyperdrive heat** is context usage (overheats at 80%), **₡ credits** = cost.
-- **Tier colours**: every rank has its own hue — saber, XP bar, crystals, badge and tab all follow it.
-- **Council judgement**: a `Stop` hook scores every finished job from the transcript and awards merit XP — *Best way* (clean + verified + efficient) +50, *Wise way* (ran tests/typecheck) +30, *Short way* (≤6 tool calls) +20, *Clean run* (no tool errors) +15, *Insight* (reviewed the diff) +10 — × tier rate, and tells the agent what it missed.
-- **The dark side**: every agent has an alignment (☀ +100 … −100 ☠, starts +50). Merits pull toward the light; failed tool calls, shipping edits without tests, flailing through 15+ tool calls, `--no-verify`, force-pushes, `rm -rf`, `reset --hard`, `sudo`, `|| true` pull toward the dark — and so does *bad counsel*: a command you hand the user (run with `!`) that fails, or one with a `<PASTE …>` placeholder still in it. Below −20 you are *tempted* (saber tints orange-red); below −50 you fall — *Sith Apprentice*, red saber, and your name becomes **Darth …**; below −80, *Sith Lord*. Sith quotes replace the holocron in the motivation hook. The Council may `jedi redeem <agent>` (+40) — otherwise only clean, verified work brings you back.
-- **Strict ledger**: every XP gain, merit and rank change is appended to `~/.claude/jedi-statusline/ledger.jsonl`, hash-chained. `jedi ledger [agent]` shows history; `jedi audit` verifies the chain and flags any hand-edited XP (`--repair` restores state from the ledger). Padawans can't promote themselves.
-- **Honesty**: claiming "tests pass" / "verified" in the final message without having run anything is a sin (−15) — the transcript is checked.
-- **Council review**: when a job changed code, the judge spawns a background `claude -p` (opt-in: `jedi setup --reviews on`; Haiku by default, `JEDI_REVIEW_MODEL` to change, `JEDI_REVIEW=off/on` to override) that scores the diff 0–6 for correctness and minimalism and flags risky changes (deleted tests, weakened auth, swallowed errors, hardcoded secrets). ≥5/6 clean → *Wisdom* +25 XP × tier, +5 light; ≤2 → *Sloppy craft*; risky → *Reckless change* −12. The agent sees the verdict on its next prompt.
-- **Trials on evidence**: the judge counts proof per Trial — Skill: clean tested edits (×2), Courage: opened a PR, Flesh: pushed a session past 80% context, Spirit: hit a failure and recovered with tests, Insight: reviewed a diff and tested. When an agent has the evidence for its next Trial, the Knights/Council are told on their next prompt: *"Trials awaiting your confirmation: ss-surgent → Trial of Skill — `jedi advance ss-surgent`"*.
-- **Holocron**: `/jedi-statusline:holocron` (or `jedi holocron`) — roster with alignment sparklines, evidence, last reviews and the last twelve judgements.
-- **Motivation hook**: on every prompt the agent is quietly told its rank, XP rate and what its next Trial demands (`hooks/hooks.json`, via `jedi motivate`), so agents know where they stand.
-- **Spinner** speaks Star Wars: `Channeling the Force… (25s)`, `Consulting the holocron…`, `Meditated for 26s`.
-- **iTerm2 extras**: a rank badge in the pane's top-right, tab colour by rank, pane title `⚔ Jedi Knight · kai-main`
-  (written straight to the tty; other terminals simply skip this).
+**Why:** agents that supervise other agents need something at stake. jedi-statusline judges every finished job from the transcript — did it run the tests it claims it ran? did it hand you a command with a placeholder still in it? did it force-push? — and everyone sees the result.
 
 ## Install
 
@@ -35,24 +16,83 @@ A Star Wars-gamified status line for [Claude Code](https://code.claude.com). Eve
 /jedi-statusline:setup
 ```
 
-Requires `python3` (macOS, Linux, Windows). Setup backs up `~/.claude/settings.json` before writing `statusLine`,
-`spinnerVerbs` and `spinnerTipsOverride` (plugins cannot set these directly). Council reviews are **off by default** — they call `claude -p` (~$0.01 per code-changing job); enable with `jedi setup --reviews on`.
+Needs `python3` (macOS, Linux, Windows). Setup backs up `~/.claude/settings.json` before writing the status line and spinner keys, and asks before enabling paid Council reviews. `/jedi-statusline:uninstall` puts everything back.
 
-## The Council
+## What you get
+
+- **A two-line status** per session: alignment slider, rank, XP bar, kyber crystals (turns), hyperdrive heat (context), branch, credits — coloured by tier.
+- **Ranks granted by a Council** (your orchestrator), never by XP. Padawans earn Knighthood through the five Jedi Trials — on evidence.
+- **Judgement after every job**: merits for clean, tested, efficient work; the dark side for errors, skipped tests, reckless commands and dishonesty.
+- **Agents that know where they stand**: each prompt carries their rank, last verdict and next Trial.
+- **A tamper-evident ledger** of every XP gain and rank change, and a `holocron` to read the whole saga.
+- Star Wars spinner verbs; iTerm2 badge, tab colour and pane title.
+
+## The path
+
+| Rank | How you get there |
+|---|---|
+| Youngling → **Padawan** | every agent starts here |
+| Padawan ◆ … ◆◆◆◆◆ | the five Trials — Skill, Courage, Flesh, Spirit, Insight |
+| **Jedi Knight** | all five Trials passed |
+| Jedi Master → Guardian → Grand Master → Force Ghost → **The Chosen One** | by decree of the Council |
+
+Trials are passed on evidence the judge collects (clean tested edits, a PR opened, a session pushed past 80 % context, a failure recovered with tests, a diff reviewed). When an agent has the proof, the Council is told on its next prompt: *"Trials awaiting your confirmation: ss-surgent → Trial of Skill — `jedi advance ss-surgent`."*
 
 ```
-/jedi-statusline:council            # or run bin/jedi directly
-jedi roster
-jedi advance ss-surgent              # ◆ ss-surgent has passed the Trial of Courage. (2/5 trials)
-jedi promote ss-surgent "Jedi Master"
-jedi pin kai-main "Jedi Knight"      # sworn Knight, forever
+jedi roster                        jedi advance <agent>     one Trial / one rank up
+jedi holocron                      jedi demote  <agent>     one step down
+jedi ledger [agent]                jedi promote <agent> "<Rank>"   Council override
+jedi audit [--repair]              jedi pin     <agent> "<Rank>"   never changes (your orchestrator)
+                                   jedi redeem  <agent>     +40 alignment, mercy
 ```
 
-Agents are matched by session name (`/rename`). State lives in `~/.claude/jedi-statusline/`.
+## The judgement
 
-## Uninstall
+After each job a `Stop` hook reads the transcript and scores it.
 
-`/jedi-statusline:uninstall` — restores the backup or removes only our keys.
+| Merit | XP | For |
+|---|---|---|
+| Best way | +50 | clean + verified + efficient |
+| Wise way | +30 | ran tests / typecheck |
+| Short way | +20 | ≤ 6 tool calls |
+| Clean run | +15 | no failed tool calls |
+| Insight | +10 | reviewed its own diff |
+
+XP is multiplied by tier (Padawan ×1 … Knight ×2 … The Chosen One ×5). Work XP also trickles in per turn, per line and per cent spent.
+
+| The dark side | Alignment |
+|---|---|
+| failed tool calls | −4 each |
+| shipped edits without tests / typecheck | −8 |
+| flailed through 15+ tool calls | −6 |
+| bad counsel — a command it gave you that failed | −6 each |
+| `--no-verify`, force-push, `rm -rf`, `reset --hard`, `sudo`, `\|\| true`, a `<PASTE …>` placeholder left in a command | −15 each |
+| claimed "tests pass" / "verified" without running anything | −15, and the job's merit XP is voided |
+
+Alignment runs from ☀ +100 to −100 ☠ (everyone starts at +50). Below −20 you're *tempted*; below −50 you **fall** — Sith Apprentice, red saber, your name spoken as *Darth …*; below −80, Sith Lord. Only clean, verified work — or Council mercy — brings you back.
+
+<details>
+<summary><b>Council review (optional, paid)</b></summary>
+
+When a job changed code, the judge can spawn a background `claude -p` (Haiku, ≈ $0.01 per job) that scores the diff 0–6 for correctness and minimalism and flags risky changes — deleted tests, weakened auth, swallowed errors, hardcoded secrets. ≥ 5/6 clean → *Wisdom* +25 XP × tier and +5 light; ≤ 2 → *Sloppy craft*; risky → *Reckless change* −12. The agent sees the verdict on its next prompt.
+
+Off by default. Enable with `jedi setup --reviews on`; `JEDI_REVIEW_MODEL` picks the model; `JEDI_REVIEW=off/on` overrides.
+</details>
+
+<details>
+<summary><b>The ledger</b></summary>
+
+Every XP gain, merit, alignment change and rank decree is appended to `~/.claude/jedi-statusline/ledger.jsonl`, hash-chained. `jedi ledger [agent]` shows history; `jedi audit` verifies the chain and flags any hand-edited state (`--repair` rebuilds state from the ledger). Padawans can't promote themselves.
+</details>
+
+<details>
+<summary><b>Under the hood</b></summary>
+
+- `scripts/statusline.py` — the status line; reads Claude Code's status JSON, keeps state in `~/.claude/jedi-statusline/` (or `$JEDI_DIR`), locks across concurrent sessions.
+- `bin/jedi` — the Council tool and the hooks: `motivate` (UserPromptSubmit / SessionStart) and `judge` (Stop).
+- `hooks/hooks.json`, `skills/` (`setup`, `council`, `holocron`, `uninstall`), `docs/render.py` (regenerates the images above from real output).
+- Agents are identified by session name (`/rename`); state persists across restarts.
+</details>
 
 ## License
 
