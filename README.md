@@ -57,12 +57,14 @@ After each job a `Stop` hook reads the transcript and scores it.
 | Short way | +20 | ≤ 6 tool calls |
 | Clean run | +15 | no failed tool calls |
 | Insight | +10 | reviewed its own diff |
+| Gratitude | +10 | you said "well done" / "thanks" / "working well" (also +5 light) |
 
 XP is multiplied by tier (Padawan ×1 … Knight ×2 … The Chosen One ×5). Work XP also trickles in per turn, per line and per cent spent.
 
 | The dark side | Alignment |
 |---|---|
 | failed tool calls | −4 each |
+| displeased you ("not working", "wrong", "why did you…") | −4 each |
 | shipped edits without tests / typecheck | −8 |
 | flailed through 15+ tool calls | −6 |
 | bad counsel — a command it gave you that failed | −6 each |

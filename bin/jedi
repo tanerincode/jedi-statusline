@@ -110,11 +110,18 @@ elif op == "judge":
     new = lines[start:]; sess["judged_lines"] = len(lines)
     tools = errors = edits = 0; tested = reviewed = False; cmds = []; sins = []
     counsel_fail = 0; last_user_cmd = None
-    final_text = []; pr_opened = False                  # commands the user ran with `!` — the agent's counsel
+    final_text = []; pr_opened = False; praise = displeasure = 0
+    PRAISE = re.compile(r"\b(well done|good job|great job|great work|nice work|good work|perfect|excellent|awesome|brilliant|bravo|love it|works? (well|great|perfectly)|working (well|great|perfectly)|thank you|thanks|teşekkür|harika|süper|mükemmel|aferin|eline sağlık)\b|👏|🙏|🔥", re.I)
+    UNHAPPY = re.compile(r"\b(not working|doesn'?t work|isn'?t working|still broken|you broke|wrong|why did you|what did you do|stop doing|çalışmıyor|yanlış|bozdun|olmadı)\b", re.I)                  # commands the user ran with `!` — the agent's counsel
     for ln in new:
         try: e = json.loads(ln)
         except Exception: continue
         content = (e.get("message") or {}).get("content")
+        if e.get("type") == "user":
+            utext = content if isinstance(content, str) else " ".join(b.get("text", "") for b in (content or []) if isinstance(b, dict) and b.get("type") == "text")
+            if utext and not utext.startswith("<"):            # a real human prompt, not bash-input/tool_result/system tags
+                if PRAISE.search(utext): praise += 1
+                if UNHAPPY.search(utext): displeasure += 1
         if e.get("type") == "user" and isinstance(content, str):
             if content.startswith("<bash-input>"):
                 last_user_cmd = content
@@ -150,13 +157,14 @@ elif op == "judge":
     claimed = re.search(r"(tests?|typecheck|type-check|lint|build|suite)\w*\s+(pass|passed|passes|green|succeed|clean)|all green|verified|confirmed working", tail_text, re.I)
     if claimed and edits and not tested: sins.append("claimed verification it never ran")
     sins = sorted(set(sins))
-    if tools == 0 and not counsel_fail and not sins: wr(S.STATE, state); sys.exit(0)   # pure chat turn: nothing to judge
+    if tools == 0 and not counsel_fail and not sins and not praise and not displeasure: wr(S.STATE, state); sys.exit(0)   # pure chat turn: nothing to judge
     merits = []
     if errors == 0 and tools:       merits.append(("Clean run", 15, "no failed tool calls"))
     if tools <= 6 and edits:        merits.append(("Short way", 20, f"done in {tools} tool calls"))
     if tested:                      merits.append(("Wise way", 30, "verified with tests/typecheck"))
     if reviewed:                    merits.append(("Insight", 10, "reviewed the diff before finishing"))
     if edits and errors == 0 and tested and tools <= 10: merits.append(("Best way", 50, "clean, verified, efficient"))
+    if praise:                      merits.append(("Gratitude", 10 * min(praise, 3), "the user was pleased"))
     missed = []
     if errors:      missed.append(f"Clean run ({errors} tool error{'s' if errors > 1 else ''})")
     if counsel_fail: missed.append(f"Good counsel ({counsel_fail} user-run command{'s' if counsel_fail > 1 else ''} failed)")
@@ -171,11 +179,12 @@ elif op == "judge":
         S.ledger_append({"kind": "merit", "agent": agent, "session": sid, "delta": gained, "mult": mult,
                          "merits": [m[0] for m in merits], "missed": missed, "tools": tools, "errors": errors})
     # ---- alignment: light from merits, dark from sloppiness
-    light = {"Clean run": 4, "Short way": 3, "Wise way": 6, "Insight": 3, "Best way": 8}
+    light = {"Clean run": 4, "Short way": 3, "Wise way": 6, "Insight": 3, "Best way": 8, "Gratitude": 5 * min(praise, 3)}
     dark = []
     if errors:                 dark.append((f"{errors} failed tool call{'s' if errors > 1 else ''}", 4 * min(errors, 5)))
     if edits and not tested:   dark.append(("shipped edits without tests/typecheck", 8))
     if tools > 15:             dark.append((f"flailed through {tools} tool calls", 6))
+    if displeasure:            dark.append((f"displeased the user ({displeasure}×)", 4 * min(displeasure, 3)))
     if counsel_fail:           dark.append((f"bad counsel: {counsel_fail} command{'s' if counsel_fail > 1 else ''} you gave the user failed", 6 * min(counsel_fail, 3)))
     for sn in sins:            dark.append((sn, 15))
     d_light = sum(light.get(m[0], 0) for m in merits); d_dark = sum(x[1] for x in dark)
