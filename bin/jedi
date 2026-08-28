@@ -55,7 +55,7 @@ elif op == "pin" and len(cmd) >= 3:
     promos.setdefault("_pinned", {})[name] = NAMES.index(rank); wr(S.PROMOS, promos); S.ledger_append({"kind": "pin", "agent": name, "rank": NAMES.index(rank)})
     print(f"⚔ {name} is sworn as {rank}, permanently.")
 elif op == "unpin" and len(cmd) >= 2:
-    promos.get("_pinned", {}).pop(cmd[1], None); wr(S.PROMOS, promos); print(f"{cmd[1]} is released from their oath.")
+    promos.get("_pinned", {}).pop(cmd[1], None); wr(S.PROMOS, promos); S.ledger_append({"kind": "unpin", "agent": cmd[1]}); print(f"{cmd[1]} is released from their oath.")
 elif op == "judge":
     # Stop hook: score the job just finished. Heuristics over the transcript since the last judgement.
     try: h = json.load(sys.stdin)
@@ -128,23 +128,27 @@ elif op == "audit":
         if r.get("prev") != prev or hashlib.sha256((prev + payload).encode()).hexdigest()[:24] != r.get("hash"):
             bad = i; break
         prev = r["hash"]
-    xp, rank = {}, {}
+    xp, lp = {}, {"_pinned": {}}                     # lp = promotions rebuilt from the ledger
     for r in rows[: bad if bad is not None else None]:
         if r["kind"] in ("work", "merit", "adjust"): xp[r["agent"]] = xp.get(r["agent"], 0) + r["delta"]
-        elif r["kind"] in ("rank", "pin"): rank[r["agent"]] = r["rank"]
+        elif r["kind"] == "rank": lp[r["agent"]] = r["rank"]
+        elif r["kind"] == "pin":
+            if r.get("void"): lp["_pinned"].pop(r["agent"], None)
+            else: lp["_pinned"][r["agent"]] = r["rank"]
+        elif r["kind"] == "unpin": lp["_pinned"].pop(r["agent"], None)
     print(f"ledger: {len(rows)} entries, chain {'BROKEN at line ' + str(bad + 1) if bad is not None else 'intact ✔'}")
     drift = False
     for a, v in sorted(xp.items(), key=lambda kv: -kv[1]):
         cur = state.get("agents", {}).get(a, {}).get("xp", 0); flag = "" if cur == v else f"   ⚠ state says {cur:,}"
         drift |= bool(flag); print(f"  {a:28} {v:>8,} XP{flag}")
-    for a, r in rank.items():
-        cur, _ = S.rank_for(a, promos)
-        if cur != r: drift = True; print(f"  {a:28} rank ledger={NAMES[r]} promotions.json={NAMES[cur]}   ⚠")
+    agents = set(xp) | {k for k in promos if not k.startswith("_")} | {k for k in lp if not k.startswith("_")}
+    for a in sorted(agents):
+        lr, _ = S.rank_for(a, lp); cr, _ = S.rank_for(a, promos)
+        if lr != cr: drift = True; print(f"  {a:28} rank ledger={NAMES[lr]} promotions.json={NAMES[cr]}   ⚠")
+    rank = {k: v for k, v in lp.items() if k != "_pinned"}
     if "--repair" in cmd and bad is None:
         for a, v in xp.items(): state.setdefault("agents", {}).setdefault(a, {"xp": 0, "levelup_at": 0, "rank": None})["xp"] = v
-        for a, r in rank.items():
-            if a in (promos.get("_pinned") or {}): promos["_pinned"][a] = r
-            else: promos[a] = r
+        promos = {**rank, "_pinned": lp["_pinned"]}
         wr(S.STATE, state); wr(S.PROMOS, promos); print("state repaired from ledger ✔")
     elif drift: print("run `jedi audit --repair` to restore state from the ledger")
     sys.exit(1 if bad is not None else 0)
