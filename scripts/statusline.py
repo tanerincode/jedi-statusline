@@ -12,6 +12,23 @@ import json, os, sys, time, random, subprocess, base64
 DIR    = os.path.expanduser("~/.claude/jedi-statusline")
 STATE  = f"{DIR}/state.json"
 PROMOS = f"{DIR}/promotions.json"
+LEDGER = f"{DIR}/ledger.jsonl"
+
+def ledger_append(ev):
+    """Append-only, hash-chained record. Each line carries sha256(prev_hash + payload)."""
+    import hashlib
+    os.makedirs(DIR, exist_ok=True)
+    prev = "genesis"
+    try:
+        with open(LEDGER, "rb") as f:
+            f.seek(0, 2); size = f.tell(); f.seek(max(0, size - 4096)); tail = f.read().decode(errors="ignore").strip().splitlines()
+            if tail: prev = json.loads(tail[-1]).get("hash", prev)
+    except Exception: pass
+    ev = dict(ev); ev["t"] = round(time.time(), 3); ev["prev"] = prev
+    payload = json.dumps({k: v for k, v in ev.items() if k != "hash"}, sort_keys=True)
+    ev["hash"] = hashlib.sha256((prev + payload).encode()).hexdigest()[:24]
+    with open(LEDGER, "a") as f: f.write(json.dumps(ev, sort_keys=True) + "\n")
+    return ev["hash"]
 
 def c(n, s): return f"\033[38;5;{n}m{s}\033[0m"
 def b(s):    return f"\033[1m{s}\033[0m"
@@ -162,6 +179,8 @@ def main():
     if gained > 0:
         ag["xp"] += gained; st["xp"] = st.get("xp", 0) + gained
         ag["last_gain"] = gained; ag["gain_t"] = now
+        ledger_append({"kind": "work", "agent": agent_key, "session": sid, "delta": gained,
+                       "base": base, "mult": mult, "cost": round(cost, 4), "lines": la + lr, "turns": s["kyber"]})
     s["t"] = now
     st["sessions"] = {k: v for k, v in st["sessions"].items() if now - v.get("t", now) < 3 * 86400}
 

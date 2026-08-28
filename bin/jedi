@@ -10,6 +10,8 @@
   jedi unpin   <agent>
   jedi motivate                     (hook) reads Claude Code hook JSON on stdin, prints rank context
   jedi judge                        (Stop hook) scores the finished job from the transcript, awards merit XP
+  jedi ledger [agent] [n]           show the last n ledger entries (append-only, hash-chained)
+  jedi audit [--repair]             verify the ledger chain and recompute XP/ranks; --repair rewrites state from it
 """
 import json, os, sys, random
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
@@ -26,7 +28,7 @@ op = cmd[0]
 if op == "advance" and len(cmd) >= 2:
     name = cmd[1]; cur, _ = S.rank_for(name, promos)
     if cur >= len(NAMES) - 1: sys.exit(f"{name} is already {NAMES[cur]}.")
-    promos[name] = cur + 1; wr(S.PROMOS, promos)
+    promos[name] = cur + 1; wr(S.PROMOS, promos); S.ledger_append({"kind": "rank", "agent": name, "rank": cur + 1, "by": "advance"})
     if S.PADAWAN <= cur < S.KNIGHT - 1:
         print(f"◆ {name} has passed the {S.TRIALS[cur - 1][0]}. ({cur}/5 trials)")
     elif cur == S.KNIGHT - 1:
@@ -36,18 +38,18 @@ if op == "advance" and len(cmd) >= 2:
 elif op == "promote" and len(cmd) >= 3:
     name, rank = cmd[1], " ".join(cmd[2:])
     if rank not in NAMES: sys.exit(f"unknown rank {rank!r}; one of {NAMES}")
-    promos[name] = NAMES.index(rank); wr(S.PROMOS, promos)
+    promos[name] = NAMES.index(rank); wr(S.PROMOS, promos); S.ledger_append({"kind": "rank", "agent": name, "rank": NAMES.index(rank), "by": "promote"})
     print(f"★ By order of the Council, {name} is now {rank}.")
 elif op == "demote" and len(cmd) >= 2:
     name = cmd[1]; cur, _ = S.rank_for(name, promos)
     if cur <= S.PADAWAN: sys.exit(f"{name} is already a Padawan.")
-    promos[name] = cur - 1; wr(S.PROMOS, promos); print(f"{name} steps down to {NAMES[cur - 1]}.")
+    promos[name] = cur - 1; wr(S.PROMOS, promos); S.ledger_append({"kind": "rank", "agent": name, "rank": cur - 1, "by": "demote"}); print(f"{name} steps down to {NAMES[cur - 1]}.")
 elif op == "reset" and len(cmd) >= 2:
-    promos.pop(cmd[1], None); wr(S.PROMOS, promos); print(f"{cmd[1]} returns to Padawan.")
+    promos.pop(cmd[1], None); wr(S.PROMOS, promos); S.ledger_append({"kind": "rank", "agent": cmd[1], "rank": S.PADAWAN, "by": "reset"}); print(f"{cmd[1]} returns to Padawan.")
 elif op == "pin" and len(cmd) >= 3:
     name, rank = cmd[1], " ".join(cmd[2:])
     if rank not in NAMES: sys.exit(f"unknown rank {rank!r}")
-    promos.setdefault("_pinned", {})[name] = NAMES.index(rank); wr(S.PROMOS, promos)
+    promos.setdefault("_pinned", {})[name] = NAMES.index(rank); wr(S.PROMOS, promos); S.ledger_append({"kind": "pin", "agent": name, "rank": NAMES.index(rank)})
     print(f"⚔ {name} is sworn as {rank}, permanently.")
 elif op == "unpin" and len(cmd) >= 2:
     promos.get("_pinned", {}).pop(cmd[1], None); wr(S.PROMOS, promos); print(f"{cmd[1]} is released from their oath.")
@@ -92,6 +94,8 @@ elif op == "judge":
     if gained:
         ag["xp"] += gained; state["xp"] = state.get("xp", 0) + gained
         ag["last_gain"] = gained; ag["gain_t"] = __import__("time").time()
+        S.ledger_append({"kind": "merit", "agent": agent, "session": sid, "delta": gained, "mult": mult,
+                         "merits": [m[0] for m in merits], "missed": missed, "tools": tools, "errors": errors})
     ag["last_job"] = {"xp": gained, "merits": [m[0] for m in merits], "missed": missed, "tools": tools, "errors": errors, "tested": tested}
     wr(S.STATE, state)
     # tell the agent how the Council judged it (Stop hooks may print plain text back into context)
@@ -99,6 +103,47 @@ elif op == "judge":
         parts = [f"{m[0]} +{int(m[1]*mult)} ({m[2]})" for m in merits]
         txt = f"⚔ Council judgement for this job: +{gained} XP" + (" · " + " · ".join(parts) if parts else "") + (f" · Missed: {', '.join(missed)}" if missed else "")
         print(txt)
+elif op == "ledger":
+    who = cmd[1] if len(cmd) > 1 and not cmd[1].isdigit() else None
+    n = int(cmd[-1]) if cmd[-1].isdigit() else 20
+    rows = [json.loads(l) for l in open(S.LEDGER)] if os.path.exists(S.LEDGER) else []
+    if who: rows = [r for r in rows if S.match(r.get("agent"), who)]
+    import datetime
+    for r in rows[-n:]:
+        ts = datetime.datetime.fromtimestamp(r["t"]).strftime("%m-%d %H:%M")
+        if r["kind"] == "work":   what = f"+{r['delta']:>4} XP  work   ×{r['mult']:g}  turns={r.get('turns')}"
+        elif r["kind"] == "merit": what = f"+{r['delta']:>4} XP  merit  {', '.join(r.get('merits') or []) or '—'}" + (f"  missed: {', '.join(r['missed'])}" if r.get("missed") else "")
+        else:                      what = f"      rank → {NAMES[r['rank']]}  by {r.get('by', r['kind'])}"
+        print(f"{ts}  {r.get('agent',''):24} {what}  #{r['hash'][:8]}")
+elif op == "audit":
+    import hashlib
+    rows = [json.loads(l) for l in open(S.LEDGER)] if os.path.exists(S.LEDGER) else []
+    prev, bad = "genesis", None
+    for i, r in enumerate(rows):
+        payload = json.dumps({k: v for k, v in r.items() if k != "hash"}, sort_keys=True)
+        if r.get("prev") != prev or hashlib.sha256((prev + payload).encode()).hexdigest()[:24] != r.get("hash"):
+            bad = i; break
+        prev = r["hash"]
+    xp, rank = {}, {}
+    for r in rows[: bad if bad is not None else None]:
+        if r["kind"] in ("work", "merit"): xp[r["agent"]] = xp.get(r["agent"], 0) + r["delta"]
+        elif r["kind"] in ("rank", "pin"): rank[r["agent"]] = r["rank"]
+    print(f"ledger: {len(rows)} entries, chain {'BROKEN at line ' + str(bad + 1) if bad is not None else 'intact ✔'}")
+    drift = False
+    for a, v in sorted(xp.items(), key=lambda kv: -kv[1]):
+        cur = state.get("agents", {}).get(a, {}).get("xp", 0); flag = "" if cur == v else f"   ⚠ state says {cur:,}"
+        drift |= bool(flag); print(f"  {a:28} {v:>8,} XP{flag}")
+    for a, r in rank.items():
+        cur, _ = S.rank_for(a, promos)
+        if cur != r: drift = True; print(f"  {a:28} rank ledger={NAMES[r]} promotions.json={NAMES[cur]}   ⚠")
+    if "--repair" in cmd and bad is None:
+        for a, v in xp.items(): state.setdefault("agents", {}).setdefault(a, {"xp": 0, "levelup_at": 0, "rank": None})["xp"] = v
+        for a, r in rank.items():
+            if a in (promos.get("_pinned") or {}): promos["_pinned"][a] = r
+            else: promos[a] = r
+        wr(S.STATE, state); wr(S.PROMOS, promos); print("state repaired from ledger ✔")
+    elif drift: print("run `jedi audit --repair` to restore state from the ledger")
+    sys.exit(1 if bad is not None else 0)
 elif op == "motivate":
     # Claude Code hook: stdin has {session_id, hook_event_name, ...}; map session → agent via state
     try: h = json.load(sys.stdin)
