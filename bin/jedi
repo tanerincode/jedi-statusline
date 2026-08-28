@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""jedi — the Council tool: promote / demote agents, pin ranks, list the roster.
+
+  jedi roster
+  jedi advance <agent>              one step up: Padawan passes its next Trial (Skill→Courage→Flesh→Spirit→Insight→Knight),
+                                       Knights climb one rank (Master, Guardian, …)
+  jedi promote <agent> "<Rank>"     jump straight to a rank (Council override)
+  jedi demote  <agent>              one step down (back toward Padawan)
+  jedi reset   <agent>              back to plain Padawan
+  jedi pin     <agent> "<Rank>"     rank never changes (e.g. your orchestrator is always Jedi Knight)
+  jedi unpin   <agent>
+"""
+import json, os, sys
+D = os.path.expanduser("~/.claude/jedi-statusline"); os.makedirs(D, exist_ok=True)
+RANKS = ["Youngling","Padawan","Padawan ◆","Padawan ◆◆","Padawan ◆◆◆","Padawan ◆◆◆◆","Padawan ◆◆◆◆◆",
+         "Jedi Knight","Jedi Master","Jedi Guardian","Grand Master","Force Ghost","The Chosen One"]
+TRIALS = ["Trial of Skill","Trial of Courage","Trial of the Flesh","Trial of Spirit","Trial of Insight"]
+KNIGHT = RANKS.index("Jedi Knight")
+def rd(p):
+    try: return json.load(open(p))
+    except Exception: return {}
+def wr(p, d): json.dump(d, open(p, "w"), indent=1)
+promos = rd(f"{D}/promotions.json"); state = rd(f"{D}/state.json")
+cmd = sys.argv[1:] or ["roster"]
+if cmd[0] == "promote" and len(cmd) >= 3:
+    name, rank = cmd[1], " ".join(cmd[2:])
+    if rank not in RANKS: sys.exit(f"unknown rank {rank!r}; one of {RANKS}")
+    promos[name] = RANKS.index(rank); wr(f"{D}/promotions.json", promos)
+    print(f"★ By order of the Council, {name} is now {rank}.")
+elif cmd[0] == "advance" and len(cmd) >= 2:
+    name = cmd[1]; cur = promos.get(name, 1)
+    if cur >= len(RANKS) - 1: sys.exit(f"{name} is already {RANKS[cur]}.")
+    promos[name] = cur + 1; wr(f"{D}/promotions.json", promos)
+    if 1 <= cur < KNIGHT - 1:
+        print(f"◆ {name} has passed the {TRIALS[cur - 1]}. ({cur}/5 trials)")
+    elif cur == KNIGHT - 1:
+        print(f"★ {name} has passed the Trial of Insight and is knighted: {RANKS[cur + 1]}.")
+    else:
+        print(f"★ By order of the Council, {name} rises to {RANKS[cur + 1]}.")
+elif cmd[0] == "demote" and len(cmd) >= 2:
+    name = cmd[1]; cur = promos.get(name, 1)
+    if cur <= 1: sys.exit(f"{name} is already a Padawan.")
+    promos[name] = cur - 1; wr(f"{D}/promotions.json", promos)
+    print(f"{name} steps down to {RANKS[cur - 1]}.")
+elif cmd[0] == "pin" and len(cmd) >= 3:
+    name, rank = cmd[1], " ".join(cmd[2:])
+    if rank not in RANKS: sys.exit(f"unknown rank {rank!r}")
+    promos.setdefault("_pinned", {})[name] = RANKS.index(rank); wr(f"{D}/promotions.json", promos)
+    print(f"⚔ {name} is sworn as {rank}, permanently.")
+elif cmd[0] == "unpin" and len(cmd) >= 2:
+    promos.get("_pinned", {}).pop(cmd[1], None); wr(f"{D}/promotions.json", promos)
+    print(f"{cmd[1]} is released from their oath.")
+elif cmd[0] == "reset" and len(cmd) >= 2:
+    promos.pop(cmd[1], None); wr(f"{D}/promotions.json", promos)
+    print(f"{cmd[1]} returns to Padawan.")
+else:
+    agents = state.get("agents", {})
+    for n, a in sorted(agents.items(), key=lambda kv: -kv[1].get("xp", 0)):
+        pinned = promos.get("_pinned", {})
+        r = next((v for k, v in pinned.items() if n.lower().startswith(k.lower())), promos.get(n, 1))
+        r = r if isinstance(r, int) else RANKS.index(r)
+        print(f"{RANKS[r]:15} {n:28} {a.get('xp',0):>8,} XP")

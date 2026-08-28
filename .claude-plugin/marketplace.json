@@ -1,0 +1,21 @@
+{
+  "name": "tanerincode",
+  "owner": {
+    "name": "Taner Tombas"
+  },
+  "plugins": [
+    {
+      "name": "jedi-statusline",
+      "source": "./",
+      "description": "Star Wars-gamified status line: lightsaber, Jedi Trials, Council promotions, iTerm2 badges.",
+      "version": "0.1.0",
+      "license": "MIT",
+      "keywords": [
+        "statusline",
+        "star-wars",
+        "fun"
+      ]
+    }
+  ],
+  "description": "Taner Tombas's Claude Code plugins — fun status lines and terminal toys."
+}
