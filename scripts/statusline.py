@@ -182,6 +182,7 @@ def main():
     base = int(dcost * 100) + dlines
     if prompt_id and prompt_id != s["last_prompt"]:
         s["last_prompt"] = prompt_id; s["kyber"] += 1; base += 5
+    base = min(base, 500)
     gained = int(round(base * mult))
     if gained > 0:
         ag["xp"] += gained; st["xp"] = st.get("xp", 0) + gained
@@ -232,8 +233,16 @@ def main():
     save(st)
     print(line1); print(line2); print(line3)
 
+def locked_main():
+    import fcntl
+    os.makedirs(DIR, exist_ok=True)
+    with open(f"{DIR}/.lock", "w") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        try: main()
+        finally: fcntl.flock(lk, fcntl.LOCK_UN)
+
 if __name__ == "__main__":
-    try: main()
+    try: locked_main()
     except Exception:
         try:
             for ln in load_json(STATE, {}).get("last", []): print(ln)

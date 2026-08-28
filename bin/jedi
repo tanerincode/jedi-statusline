@@ -17,6 +17,9 @@ import json, os, sys, random
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
 import statusline as S
 
+import fcntl
+_lk = open(os.path.join(S.DIR, ".lock"), "w") if os.path.isdir(S.DIR) else None
+if _lk: fcntl.flock(_lk, fcntl.LOCK_EX)
 def wr(p, d):
     os.makedirs(S.DIR, exist_ok=True); json.dump(d, open(p, "w"), indent=1)
 
@@ -112,6 +115,7 @@ elif op == "ledger":
     for r in rows[-n:]:
         ts = datetime.datetime.fromtimestamp(r["t"]).strftime("%m-%d %H:%M")
         if r["kind"] == "work":   what = f"+{r['delta']:>4} XP  work   ×{r['mult']:g}  turns={r.get('turns')}"
+        elif r["kind"] == "adjust": what = f"{r['delta']:>+5} XP  adjust {r.get('note','')}"
         elif r["kind"] == "merit": what = f"+{r['delta']:>4} XP  merit  {', '.join(r.get('merits') or []) or '—'}" + (f"  missed: {', '.join(r['missed'])}" if r.get("missed") else "")
         else:                      what = f"      rank → {NAMES[r['rank']]}  by {r.get('by', r['kind'])}"
         print(f"{ts}  {r.get('agent',''):24} {what}  #{r['hash'][:8]}")
@@ -126,7 +130,7 @@ elif op == "audit":
         prev = r["hash"]
     xp, rank = {}, {}
     for r in rows[: bad if bad is not None else None]:
-        if r["kind"] in ("work", "merit"): xp[r["agent"]] = xp.get(r["agent"], 0) + r["delta"]
+        if r["kind"] in ("work", "merit", "adjust"): xp[r["agent"]] = xp.get(r["agent"], 0) + r["delta"]
         elif r["kind"] in ("rank", "pin"): rank[r["agent"]] = r["rank"]
     print(f"ledger: {len(rows)} entries, chain {'BROKEN at line ' + str(bad + 1) if bad is not None else 'intact ✔'}")
     drift = False
