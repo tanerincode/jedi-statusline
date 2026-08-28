@@ -1,6 +1,6 @@
 ---
 name: council
-description: Manage Jedi ranks of Claude Code sessions/agents — roster, advance one Trial, promote, demote, reset, pin. Use when the user says things like "promote ss-surgent", "who is on the roster", "knight this agent", "/jedi-statusline:council".
+description: Manage Jedi ranks of Claude Code sessions/agents — roster, advance one Trial, promote, demote, reset, pin. Use when the user says things like "promote api-agent", "who is on the roster", "knight this agent", "/jedi-statusline:council".
 ---
 
 # /jedi-statusline:council

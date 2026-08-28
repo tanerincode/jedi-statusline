@@ -36,7 +36,7 @@ Needs `python3` (macOS, Linux, Windows). Setup backs up `~/.claude/settings.json
 | **Jedi Knight** | all five Trials passed |
 | Jedi Master → Guardian → Grand Master → Force Ghost → **The Chosen One** | by decree of the Council |
 
-Trials are passed on evidence the judge collects (clean tested edits, a PR opened, a session pushed past 80 % context, a failure recovered with tests, a diff reviewed). When an agent has the proof, the Council is told on its next prompt: *"Trials awaiting your confirmation: ss-surgent → Trial of Skill — `jedi advance ss-surgent`."*
+Trials are passed on evidence the judge collects (clean tested edits, a PR opened, a session pushed past 80 % context, a failure recovered with tests, a diff reviewed). When an agent has the proof, the Council is told on its next prompt: *"Trials awaiting your confirmation: api-agent → Trial of Skill — `jedi advance api-agent`."*
 
 ```
 jedi roster                        jedi advance <agent>     one Trial / one rank up

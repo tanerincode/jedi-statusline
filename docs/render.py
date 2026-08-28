@@ -4,19 +4,19 @@ import json, os, re, html, subprocess, tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); os.chdir(ROOT)
 os.environ["JEDI_DIR"] = tempfile.mkdtemp()
 J = ["python3", "bin/jedi"]; run = lambda *a: subprocess.run(J + list(a), capture_output=True, text=True, check=True)
-run("pin", "kai-main", "The Chosen One"); run("promote", "ss-surgent", "Jedi Knight"); [run("advance", "apnd-surgent") for _ in range(3)]
+run("pin", "kai-main", "The Chosen One"); run("promote", "api-agent", "Jedi Knight"); [run("advance", "apnd-surgent") for _ in range(3)]
 def sl(name, cost, lines, used):
     d = {"session_id": "s-" + name, "session_name": name, "prompt_id": "p", "cost": {"total_cost_usd": cost, "total_lines_added": lines},
          "context_window": {"used_percentage": used}, "model": {"display_name": "Fable 5"}, "effort": {"level": "high"}, "workspace": {"current_dir": ROOT}}
     return subprocess.run(["python3", "scripts/statusline.py"], input=json.dumps(d), capture_output=True, text=True).stdout.rstrip("\n").split("\n")
-A = [("kai-main", 89.55, 0, 16), ("ss-surgent", 41.2, 120, 62), ("apnd-surgent", 12.4, 40, 34), ("ovba-surgent", 7.1, 15, 84)]
+A = [("kai-main", 89.55, 0, 16), ("api-agent", 41.2, 120, 62), ("apnd-surgent", 12.4, 40, 34), ("ovba-surgent", 7.1, 15, 84)]
 for a in A: sl(*a)
 p = os.path.join(os.environ["JEDI_DIR"], "state.json"); d = json.load(open(p))
 d["agents"]["kai-main"].update(xp=10890, align=71, align_dir=1, last_gain=None)
-d["agents"]["ss-surgent"].update(xp=14107, align=27, align_dir=-1, last_gain=30)
+d["agents"]["api-agent"].update(xp=14107, align=27, align_dir=-1, last_gain=30)
 d["agents"]["apnd-surgent"].update(xp=10539, align=58, align_dir=1, last_gain=125)
 d["agents"]["ovba-surgent"].update(xp=1637, align=-63, align_dir=-1, last_gain=None)
-for k, v in {"s-kai-main": 21, "s-ss-surgent": 9, "s-apnd-surgent": 14, "s-ovba-surgent": 31}.items(): d["sessions"][k]["kyber"] = v
+for k, v in {"s-kai-main": 21, "s-api-agent": 9, "s-apnd-surgent": 14, "s-ovba-surgent": 31}.items(): d["sessions"][k]["kyber"] = v
 json.dump(d, open(p, "w"))
 panes = [sl(*a) for a in A]
 def xterm(n):
@@ -39,8 +39,8 @@ def tspans(line):
             elif code.startswith("38;5;"): col = xterm(code.split(";")[2])
         else: out.append('<tspan fill="%s"%s>%s</tspan>' % (col, ' font-weight="bold"' if bold else '', html.escape(t)))
     return "".join(out)
-judge = [("ss-surgent", "⚔ Council judgement: +30 XP · Clean run · Missed: Good counsel (2 user-run commands failed)", "#c9c9c9"),
-         ("ss-surgent", "☠ The dark side stirs (−23 → alignment +27): bad counsel, handed the user a command with a placeholder still in it.", "#ff5f5f"),
+judge = [("api-agent", "⚔ Council judgement: +30 XP · Clean run · Missed: Good counsel (2 user-run commands failed)", "#c9c9c9"),
+         ("api-agent", "☠ The dark side stirs (−23 → alignment +27): bad counsel, handed the user a command with a placeholder still in it.", "#ff5f5f"),
          ("ovba-surgent", "☠ You have FALLEN to the dark side (alignment −63). Your name is spoken as Darth ovba-surgent.", "#ff5f5f"),
          ("apnd-surgent", "☀ The light grows (+21 → alignment +58). Council review 6/6 — Wisdom +25 XP ×1.4", "#87ff5f"),
          ("kai-main", "Trials awaiting your confirmation: apnd-surgent → Trial of Spirit (evidence ×1) — jedi advance apnd-surgent", "#ffd75f")]

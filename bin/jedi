@@ -19,7 +19,7 @@
   jedi ledger [agent] [n]           show the last n ledger entries (append-only, hash-chained)
   jedi audit [--repair]             verify the ledger chain and recompute XP/ranks; --repair rewrites state from it
 """
-import json, os, sys, random, subprocess, time
+import json, os, sys, random, subprocess, time, re
 if os.environ.get("JEDI_NO_HOOKS") and len(sys.argv) > 1 and sys.argv[1] in ("motivate", "judge"): sys.exit(0)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
 import statusline as S
