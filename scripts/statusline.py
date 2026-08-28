@@ -15,19 +15,25 @@ PROMOS = f"{DIR}/promotions.json"
 LEDGER = f"{DIR}/ledger.jsonl"
 
 def ledger_append(ev):
-    """Append-only, hash-chained record. Each line carries sha256(prev_hash + payload)."""
-    import hashlib
+    """Append-only, hash-chained record. Each line carries sha256(prev_hash + payload).
+    Serialised with an exclusive file lock: many sessions append concurrently."""
+    import hashlib, fcntl
     os.makedirs(DIR, exist_ok=True)
-    prev = "genesis"
-    try:
-        with open(LEDGER, "rb") as f:
-            f.seek(0, 2); size = f.tell(); f.seek(max(0, size - 4096)); tail = f.read().decode(errors="ignore").strip().splitlines()
-            if tail: prev = json.loads(tail[-1]).get("hash", prev)
-    except Exception: pass
-    ev = dict(ev); ev["t"] = round(time.time(), 3); ev["prev"] = prev
-    payload = json.dumps({k: v for k, v in ev.items() if k != "hash"}, sort_keys=True)
-    ev["hash"] = hashlib.sha256((prev + payload).encode()).hexdigest()[:24]
-    with open(LEDGER, "a") as f: f.write(json.dumps(ev, sort_keys=True) + "\n")
+    with open(LEDGER, "a+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            prev = "genesis"
+            f.seek(0, 2); size = f.tell(); f.seek(max(0, size - 4096))
+            tail = f.read().strip().splitlines()
+            if tail:
+                try: prev = json.loads(tail[-1]).get("hash", prev)
+                except Exception: pass
+            ev = dict(ev); ev["t"] = round(time.time(), 3); ev["prev"] = prev
+            payload = json.dumps({k: v for k, v in ev.items() if k != "hash"}, sort_keys=True)
+            ev["hash"] = hashlib.sha256((prev + payload).encode()).hexdigest()[:24]
+            f.seek(0, 2); f.write(json.dumps(ev, sort_keys=True) + "\n"); f.flush()
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
     return ev["hash"]
 
 def c(n, s): return f"\033[38;5;{n}m{s}\033[0m"
@@ -104,8 +110,9 @@ def match(name, key):
 def rank_for(name, promos=None):
     """_pinned (never changes) > promotions > default Padawan. Returns (idx, pinned?)."""
     promos = promos if promos is not None else load_json(PROMOS, {})
-    for k, v in (promos.get("_pinned") or {}).items():
-        if match(name, k): return rank_index(v), True
+    pinned = promos.get("_pinned") or {}
+    hits = sorted((k for k in pinned if match(name, k)), key=len)   # shortest (broadest) decree wins
+    if hits: return rank_index(pinned[hits[0]]), True
     for k, v in promos.items():
         if not k.startswith("_") and match(name, k): return rank_index(v), False
     return DEFAULT_RANK, False
