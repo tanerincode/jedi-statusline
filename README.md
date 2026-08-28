@@ -82,7 +82,7 @@ Off by default. Enable with `jedi setup --reviews on`; `JEDI_REVIEW_MODEL` picks
 <details>
 <summary><b>The ledger</b></summary>
 
-Every XP gain, merit, alignment change and rank decree is appended to `~/.claude/jedi-statusline/ledger.jsonl`, hash-chained. `jedi ledger [agent]` shows history; `jedi audit` verifies the chain and flags any hand-edited state (`--repair` rebuilds state from the ledger). Padawans can't promote themselves.
+Every XP gain, merit, alignment change and rank decree is appended to `~/.claude/jedi-statusline/ledger.jsonl`, hash-chained. `jedi ledger [agent]` shows history; `jedi audit` verifies the chain and flags any hand-edited state (`--repair` rebuilds state from the ledger). Ranks come only from the Council: an agent that tries to advance itself, or a Padawan that tries to promote anyone, loses alignment instead (`jedi` knows which session is calling). `pin` is reserved for the human.
 </details>
 
 <details>

@@ -170,6 +170,20 @@ def bar(frac, width, on, off, col):
     n = max(0, min(width, round(frac * width)))
     return c(col, on * n) + c(DIM, off * (width - n))
 
+def claude_pid():
+    """Nearest ancestor whose command looks like the claude CLI (the status line runs under a shell it spawned)."""
+    pid = os.getppid()
+    for _ in range(8):
+        try:
+            out = subprocess.run(["ps", "-o", "ppid=,comm=", "-p", str(pid)], capture_output=True, text=True, timeout=0.3).stdout.split(None, 1)
+            if not out: return None
+            ppid, comm = int(out[0]), (out[1] if len(out) > 1 else "")
+        except Exception: return None
+        if "claude" in comm.lower() or comm.rstrip().endswith("/node"): return pid
+        if ppid <= 1: return None
+        pid = ppid
+    return None
+
 def git_branch(cwd, st, now):
     cache = st.setdefault("git", {}); ent = cache.get(cwd)
     if ent and now - ent["t"] < 30: return ent["b"]
@@ -235,6 +249,7 @@ def main():
     # ---- XP: (1/cent + 1/line + 5/turn) × tier multiplier
     s = st.setdefault("sessions", {}).setdefault(sid, {"cost": 0.0, "lines": 0, "kyber": 0, "last_prompt": None, "t": now})
     s["agent"] = agent_key
+    if not s.get("pid"): s["pid"] = claude_pid()              # the claude process — lets jedi know who is calling
     dcost  = max(0.0, cost - s["cost"]);      s["cost"]  = cost
     dlines = max(0, (la + lr) - s["lines"]);  s["lines"] = la + lr
     base = int(dcost * 100) + dlines

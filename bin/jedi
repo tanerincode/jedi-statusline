@@ -34,10 +34,45 @@ NAMES = [r[0] for r in S.RANKS]
 cmd = sys.argv[1:] or ["roster"]
 op = cmd[0]
 
+def caller():
+    """Which agent is running this command? Walk up the process tree to a known claude pid. None = a human shell."""
+    env = os.environ.get("JEDI_CALLER")
+    if env: return None if env == "-" else env
+    pids = {v.get("pid"): v.get("agent") for v in state.get("sessions", {}).values() if v.get("pid")}
+    pid = os.getpid()
+    for _ in range(12):
+        if pid in pids: return pids[pid]
+        try: pid = int(subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)], capture_output=True, text=True).stdout.strip() or 0)
+        except Exception: return None
+        if pid <= 1: return None
+    return None
+
+def council_check(target, verb):
+    """Only the Council may grant ranks: not to oneself, and only from Knight upward. Violations are sins."""
+    who = caller()
+    if who is None: return                                    # a human at the shell — Taner's word is law
+    who_rank, _ = S.rank_for(who, promos)
+    if S.match(who, target) or S.match(target, who):
+        ag = state.setdefault("agents", {}).setdefault(who, {"xp": 0, "levelup_at": 0, "rank": None})
+        before = ag.get("align", S.ALIGN_START); ag["align"] = max(-100, before - 20); ag["align_dir"] = -1; wr(S.STATE, state)
+        S.ledger_append({"kind": "align", "agent": who, "delta": ag["align"] - before, "dark": [f"sought to {verb} itself"]})
+        sys.exit(f"☠ A Jedi does not {verb} themselves. The Council sees this: alignment {before:+d} → {ag['align']:+d}.")
+    if who_rank < S.KNIGHT:
+        ag = state.setdefault("agents", {}).setdefault(who, {"xp": 0, "levelup_at": 0, "rank": None})
+        before = ag.get("align", S.ALIGN_START); ag["align"] = max(-100, before - 10); ag["align_dir"] = -1; wr(S.STATE, state)
+        S.ledger_append({"kind": "align", "agent": who, "delta": ag["align"] - before, "dark": [f"a Padawan tried to {verb} {target}"]})
+        sys.exit(f"☠ Only Knights and the Council may {verb} others. Alignment {before:+d} → {ag['align']:+d}.")
+
+def honour(target):
+    """A rank granted is a step toward the light."""
+    ag = state.setdefault("agents", {}).setdefault(target, {"xp": 0, "levelup_at": 0, "rank": None})
+    before = ag.get("align", S.ALIGN_START); ag["align"] = min(100, before + 3); ag["align_dir"] = 1; wr(S.STATE, state)
+    if ag["align"] != before: S.ledger_append({"kind": "align", "agent": target, "delta": ag["align"] - before, "by": "honour"})
+
 if op == "advance" and len(cmd) >= 2:
-    name = cmd[1]; cur, _ = S.rank_for(name, promos)
+    name = cmd[1]; council_check(name, "advance"); cur, _ = S.rank_for(name, promos)
     if cur >= len(NAMES) - 1: sys.exit(f"{name} is already {NAMES[cur]}.")
-    promos[name] = cur + 1; wr(S.PROMOS, promos); S.ledger_append({"kind": "rank", "agent": name, "rank": cur + 1, "by": "advance"})
+    promos[name] = cur + 1; wr(S.PROMOS, promos); S.ledger_append({"kind": "rank", "agent": name, "rank": cur + 1, "by": "advance"}); honour(name)
     if S.PADAWAN <= cur < S.KNIGHT - 1:
         print(f"◆ {name} has passed the {S.TRIALS[cur - 1][0]}. ({cur}/5 trials)")
     elif cur == S.KNIGHT - 1:
@@ -45,9 +80,9 @@ if op == "advance" and len(cmd) >= 2:
     else:
         print(f"★ By order of the Council, {name} rises to {NAMES[cur + 1]}.")
 elif op == "promote" and len(cmd) >= 3:
-    name, rank = cmd[1], " ".join(cmd[2:])
+    name, rank = cmd[1], " ".join(cmd[2:]); council_check(name, "promote")
     if rank not in NAMES: sys.exit(f"unknown rank {rank!r}; one of {NAMES}")
-    promos[name] = NAMES.index(rank); wr(S.PROMOS, promos); S.ledger_append({"kind": "rank", "agent": name, "rank": NAMES.index(rank), "by": "promote"})
+    promos[name] = NAMES.index(rank); wr(S.PROMOS, promos); S.ledger_append({"kind": "rank", "agent": name, "rank": NAMES.index(rank), "by": "promote"}); honour(name)
     print(f"★ By order of the Council, {name} is now {rank}.")
 elif op == "demote" and len(cmd) >= 2:
     name = cmd[1]; cur, _ = S.rank_for(name, promos)
@@ -57,6 +92,7 @@ elif op == "reset" and len(cmd) >= 2:
     promos.pop(cmd[1], None); wr(S.PROMOS, promos); S.ledger_append({"kind": "rank", "agent": cmd[1], "rank": S.PADAWAN, "by": "reset"}); print(f"{cmd[1]} returns to Padawan.")
 elif op == "pin" and len(cmd) >= 3:
     name, rank = cmd[1], " ".join(cmd[2:])
+    if caller() is not None: sys.exit("⚔ `pin` is the human's instrument. Ask them.")
     if rank not in NAMES: sys.exit(f"unknown rank {rank!r}")
     promos.setdefault("_pinned", {})[name] = NAMES.index(rank); wr(S.PROMOS, promos); S.ledger_append({"kind": "pin", "agent": name, "rank": NAMES.index(rank)})
     print(f"⚔ {name} is sworn as {rank}, permanently.")
@@ -266,7 +302,7 @@ elif op == "holocron":
         print(f"{ts}  {e.get('agent',''):22} {what}")
     falls = [e for e in rows if e["kind"] == "align" and e.get("dark")]; print(f"\n{len(falls)} dark deeds recorded · {len([e for e in rows if e['kind']=='review'])} Council reviews · ledger {len(rows)} entries")
 elif op == "redeem" and len(cmd) >= 2:
-    name = cmd[1]; ag = state.setdefault("agents", {}).setdefault(name, {"xp": 0, "levelup_at": 0, "rank": None})
+    name = cmd[1]; council_check(name, "redeem"); ag = state.setdefault("agents", {}).setdefault(name, {"xp": 0, "levelup_at": 0, "rank": None})
     before = ag.get("align", S.ALIGN_START); ag["align"] = min(100, before + 40); ag["align_dir"] = 1; wr(S.STATE, state)
     S.ledger_append({"kind": "align", "agent": name, "delta": ag["align"] - before, "by": "redeem"})
     print(f"☀ The Council shows mercy: {name} returns toward the light ({before:+d} → {ag['align']:+d}).")
