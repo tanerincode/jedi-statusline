@@ -8,6 +8,7 @@
   jedi reset   <agent>              back to plain Padawan
   jedi pin     <agent> "<Rank>"     rank never changes (e.g. your orchestrator is always Jedi Knight)
   jedi unpin   <agent>
+  jedi rename  <old> <new>          carry XP, alignment, evidence and rank over to a new session name
   jedi redeem  <agent>              Council mercy: +40 alignment (a fallen agent may return to the light)
   jedi review  <agent> <sid> <cwd>  (spawned by judge) Council review of the diff via `claude -p`
   jedi holocron                     the whole saga: roster, alignment sparklines, last judgements
@@ -287,6 +288,19 @@ elif op == "unsetup":
     if os.path.exists("/dev/tty"):
         try: os.write(os.open("/dev/tty", os.O_WRONLY | os.O_NOCTTY), b"\033]1337;SetBadgeFormat=\007\033]6;1;bg;*;default\007")
         except Exception: pass
+elif op == "rename" and len(cmd) >= 3:
+    old, new = cmd[1], cmd[2]
+    if caller() is not None: sys.exit("⚔ `rename` is the human's instrument.")
+    if old in state.get("agents", {}):
+        state["agents"][new] = state["agents"].pop(old)
+        for s_ in state.get("sessions", {}).values():
+            if s_.get("agent") == old: s_["agent"] = new
+    for k in list(promos):
+        if k == old: promos[new] = promos.pop(old)
+    if old in (promos.get("_pinned") or {}): promos["_pinned"][new] = promos["_pinned"].pop(old)
+    wr(S.STATE, state); wr(S.PROMOS, promos)
+    S.ledger_append({"kind": "rename", "agent": new, "from": old})
+    print(f"⚔ {old} shall henceforth be known as {new}.")
 elif op == "holocron":
     agents = state.get("agents", {}); rows = [json.loads(l) for l in open(S.LEDGER)] if os.path.exists(S.LEDGER) else []
     SPARK = "▁▂▃▄▅▆▇█"
@@ -294,8 +308,10 @@ elif op == "holocron":
     for n, a in sorted(agents.items(), key=lambda kv: -kv[1].get("xp", 0)):
         r, fixed = S.rank_for(n, promos); al = a.get("align", S.ALIGN_START); dt = S.dark_tier(al); title = dt[0](NAMES[r]) if dt else NAMES[r]
         hist = [S.ALIGN_START]
+        alias = {e["from"]: e["agent"] for e in rows if e["kind"] == "rename"}
+        names = {n} | {k for k, v in alias.items() if v == n}
         for e in rows:
-            if e.get("agent") == n and e["kind"] in ("align", "review"): hist.append(max(-100, min(100, hist[-1] + (e.get("delta") if e["kind"] == "align" else e.get("align", 0)))))
+            if e.get("agent") in names and e["kind"] in ("align", "review"): hist.append(max(-100, min(100, hist[-1] + (e.get("delta") if e["kind"] == "align" else e.get("align", 0)))))
         spark = "".join(SPARK[min(7, max(0, int((v + 100) / 200 * 7.99)))] for v in hist[-24:])
         l, rr = S.slider(al, a.get("align_dir", 1)); ev = a.get("evidence", {})
         evs = " ".join(f"{k[:2]}:{v}" for k, v in ev.items()) or "—"
@@ -340,7 +356,15 @@ elif op == "audit":
             bad = i; break
         prev = r["hash"]
     xp, lp = {}, {"_pinned": {}}                     # lp = promotions rebuilt from the ledger
+    alias = {}
+    for r in rows:
+        if r["kind"] == "rename": alias[r["from"]] = r["agent"]
+    def canon(a):
+        seen = set()
+        while a in alias and a not in seen: seen.add(a); a = alias[a]
+        return a
     for r in rows[: bad if bad is not None else None]:
+        r = dict(r); r["agent"] = canon(r.get("agent"))
         if r["kind"] in ("work", "merit", "adjust", "review"): xp[r["agent"]] = xp.get(r["agent"], 0) + r["delta"]
         elif r["kind"] == "rank": lp[r["agent"]] = r["rank"]
         elif r["kind"] == "pin":
