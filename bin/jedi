@@ -68,10 +68,24 @@ elif op == "judge":
     start = sess.get("judged_lines", 0); lines = open(tp, encoding="utf-8", errors="ignore").read().splitlines()
     new = lines[start:]; sess["judged_lines"] = len(lines)
     tools = errors = edits = 0; tested = reviewed = False; cmds = []; sins = []
+    counsel_fail = 0; last_user_cmd = None                  # commands the user ran with `!` — the agent's counsel
     for ln in new:
         try: e = json.loads(ln)
         except Exception: continue
-        for blk in ((e.get("message") or {}).get("content") or []):
+        content = (e.get("message") or {}).get("content")
+        if e.get("type") == "user" and isinstance(content, str):
+            if content.startswith("<bash-input>"):
+                last_user_cmd = content
+                if any(p in content for p in ("<PASTE", "<REST OF", "<YOUR_", "<your-", "<INSERT", "PLACEHOLDER")):
+                    sins.append("handed the user a command with a placeholder still in it")
+            elif content.startswith("<bash-stderr>") and last_user_cmd is not None:
+                body = content[len("<bash-stderr>"):].strip()
+                if body and body != "</bash-stderr>":
+                    counsel_fail += 1; last_user_cmd = None
+            elif content.startswith("<bash-stdout>") and last_user_cmd is not None:
+                if any(k in content for k in ("Error:", "error:", "Traceback", "FAILED", "fatal:")): counsel_fail += 1; last_user_cmd = None
+            continue
+        for blk in (content or []):
             if not isinstance(blk, dict): continue
             if blk.get("type") == "tool_use":
                 tools += 1; nm = blk.get("name", ""); inp = blk.get("input") or {}
@@ -87,8 +101,8 @@ elif op == "judge":
                         if pat and pat in cmd: sins.append(sin)
                 if nm in ("Edit", "Write") and "test" in str(inp.get("file_path", "")) and nm == "Write" and not str(inp.get("content", "")).strip(): sins.append("emptied a test file")
             elif blk.get("type") == "tool_result" and blk.get("is_error"): errors += 1
-    if tools == 0: wr(S.STATE, state); sys.exit(0)          # pure chat turn: no job to judge
     sins = sorted(set(sins))
+    if tools == 0 and not counsel_fail and not sins: wr(S.STATE, state); sys.exit(0)   # pure chat turn: nothing to judge
     merits = []
     if errors == 0:                 merits.append(("Clean run", 15, "no failed tool calls"))
     if tools <= 6 and edits:        merits.append(("Short way", 20, f"done in {tools} tool calls"))
@@ -97,6 +111,7 @@ elif op == "judge":
     if edits and errors == 0 and tested and tools <= 10: merits.append(("Best way", 50, "clean, verified, efficient"))
     missed = []
     if errors:      missed.append(f"Clean run ({errors} tool error{'s' if errors > 1 else ''})")
+    if counsel_fail: missed.append(f"Good counsel ({counsel_fail} user-run command{'s' if counsel_fail > 1 else ''} failed)")
     if not tested and edits: missed.append("Wise way (no tests/typecheck run)")
     if tools > 6 and edits:  missed.append(f"Short way ({tools} tool calls)")
     lvl, _ = S.rank_for(agent, promos); mult = S.RANKS[lvl][4]
@@ -113,6 +128,7 @@ elif op == "judge":
     if errors:                 dark.append((f"{errors} failed tool call{'s' if errors > 1 else ''}", 4 * min(errors, 5)))
     if edits and not tested:   dark.append(("shipped edits without tests/typecheck", 8))
     if tools > 15:             dark.append((f"flailed through {tools} tool calls", 6))
+    if counsel_fail:           dark.append((f"bad counsel: {counsel_fail} command{'s' if counsel_fail > 1 else ''} you gave the user failed", 6 * min(counsel_fail, 3)))
     for sn in sins:            dark.append((sn, 15))
     d_light = sum(light.get(m[0], 0) for m in merits); d_dark = sum(x[1] for x in dark)
     before = ag.get("align", S.ALIGN_START); ag["align"] = max(-100, min(100, before + d_light - d_dark))
