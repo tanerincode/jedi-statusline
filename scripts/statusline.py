@@ -234,6 +234,8 @@ def main():
     prompt_id = d.get("prompt_id")
 
     agent_key = name or sid
+    agent_key = st.get("aliases", {}).get(agent_key, agent_key)   # renamed agents keep their new name even if the session still uses the old one
+    if agent_key != (name or sid): name = agent_key
     ag = st.setdefault("agents", {}).setdefault(agent_key, {"xp": 0, "levelup_at": 0, "rank": None, "t": now})
     ag["t"] = now
     lvl, fixed = rank_for(agent_key)

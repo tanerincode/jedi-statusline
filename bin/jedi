@@ -298,6 +298,7 @@ elif op == "rename" and len(cmd) >= 3:
     for k in list(promos):
         if k == old: promos[new] = promos.pop(old)
     if old in (promos.get("_pinned") or {}): promos["_pinned"][new] = promos["_pinned"].pop(old)
+    state.setdefault("aliases", {})[old] = new
     wr(S.STATE, state); wr(S.PROMOS, promos)
     S.ledger_append({"kind": "rename", "agent": new, "from": old})
     print(f"⚔ {old} shall henceforth be known as {new}.")
