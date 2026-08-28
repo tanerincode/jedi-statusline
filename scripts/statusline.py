@@ -238,8 +238,6 @@ def main():
     promoted = now - ag.get("levelup_at", 0) < 20
 
     st["frame"] = (st.get("frame", 0) + 1) % len(SABER)
-    if now - st.get("quote_t", 0) > 600:
-        st["quote_i"] = random.randrange(len(QUOTES)); st["quote_t"] = now
 
     # ---- line 1: saber · rank · progress · XP (+ticker)
     head = (c(GOLD, b(f"★ Promoted → {title}")) if promoted else c(col, b(title))) + c(DIM, f" · {epithet}")
@@ -271,13 +269,11 @@ def main():
     if name:   tail.append(c(col, name))
     tail.append(c(GOLD, f"₡{cost * 100:,.0f}"))
     line2 = f"  {kyber}  {heat}  " + c(DIM, "│ ") + c(DIM, " · ").join(tail)
-    q = SITH_QUOTES[st["quote_i"] % len(SITH_QUOTES)] if align <= -20 else QUOTES[st["quote_i"]]
-    line3 = c(DIM if align > -20 else 124, "  ❝ " + q + " ❞")
 
     iterm(st, title, ag["xp"], name, rgb, promoted, lvl, align, ag.get("align_dir", 1))
-    st["last"] = [line1, line2, line3]
+    st["last"] = [line1, line2]
     save(st)
-    print(line1); print(line2); print(line3)
+    print(line1); print(line2)
 
 def locked_main():
     import fcntl
