@@ -233,7 +233,6 @@ def main():
         st["quote_i"] = random.randrange(len(QUOTES)); st["quote_t"] = now
 
     # ---- line 1: saber · rank · progress · XP (+ticker)
-    saber = c(DIM, "╞") + c(col, SABER[st["frame"]] + "━" * 3)
     head = (c(GOLD, b(f"★ Promoted → {title}")) if promoted else c(col, b(title))) + c(DIM, f" · {epithet}")
     if lvl >= KNIGHT: frac, tail_txt = 1.0, (" · sworn Knight" if fixed else " · by the Council")
     else:             frac, tail_txt = (lvl - PADAWAN) / (KNIGHT - PADAWAN), f" · {lvl - PADAWAN}/5 trials"
@@ -244,7 +243,7 @@ def main():
     a01 = (align + 100) / 200
     acol = GREEN if align >= 20 else (GOLD if align >= -20 else RED)
     abar = c(acol, "☀ ") + bar(a01, 8, "▰", "▱", acol) + c(acol, " ☠") if align < 20 else c(acol, "☀ ") + bar(a01, 8, "▰", "▱", acol) + c(DIM, " ☠")
-    line1 = f"{saber} {head}  {bar(frac, 12, '▰', '▱', col)} {xp_txt}  {abar} {c(acol, f'{align:+d}')}"
+    line1 = f"{abar} {c(acol, f'{align:+d}')}  {head}  {bar(frac, 12, '▰', '▱', col)} {xp_txt}"
 
     # ---- line 2: kyber · hyperdrive · model · branch · session · credits
     k = s["kyber"]; crystals = "".join("◆" if i < k % 12 else "◇" for i in range(12))
