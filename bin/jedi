@@ -9,6 +9,7 @@
   jedi pin     <agent> "<Rank>"     rank never changes (e.g. your orchestrator is always Jedi Knight)
   jedi unpin   <agent>
   jedi motivate                     (hook) reads Claude Code hook JSON on stdin, prints rank context
+  jedi judge                        (Stop hook) scores the finished job from the transcript, awards merit XP
 """
 import json, os, sys, random
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
@@ -50,6 +51,54 @@ elif op == "pin" and len(cmd) >= 3:
     print(f"⚔ {name} is sworn as {rank}, permanently.")
 elif op == "unpin" and len(cmd) >= 2:
     promos.get("_pinned", {}).pop(cmd[1], None); wr(S.PROMOS, promos); print(f"{cmd[1]} is released from their oath.")
+elif op == "judge":
+    # Stop hook: score the job just finished. Heuristics over the transcript since the last judgement.
+    try: h = json.load(sys.stdin)
+    except Exception: h = {}
+    sid = h.get("session_id", ""); tp = h.get("transcript_path", "")
+    sess = state.setdefault("sessions", {}).setdefault(sid, {})
+    agent = sess.get("agent") or ""
+    if not agent or not tp or not os.path.exists(tp): sys.exit(0)
+    start = sess.get("judged_lines", 0); lines = open(tp, encoding="utf-8", errors="ignore").read().splitlines()
+    new = lines[start:]; sess["judged_lines"] = len(lines)
+    tools = errors = edits = 0; tested = reviewed = False; cmds = []
+    for ln in new:
+        try: e = json.loads(ln)
+        except Exception: continue
+        for blk in ((e.get("message") or {}).get("content") or []):
+            if not isinstance(blk, dict): continue
+            if blk.get("type") == "tool_use":
+                tools += 1; nm = blk.get("name", ""); inp = blk.get("input") or {}
+                if nm in ("Edit", "Write", "MultiEdit", "NotebookEdit"): edits += 1
+                if nm == "Bash":
+                    cmd = str(inp.get("command", "")); cmds.append(cmd)
+                    if any(t in cmd for t in ("pytest", "npm test", "yarn test", "pnpm test", "go test", "cargo test", "tsc", "typecheck", "lint", "vitest", "jest", "mypy", "ruff")): tested = True
+                    if any(t in cmd for t in ("git diff", "gh pr view", "gh pr diff", "git log")): reviewed = True
+            elif blk.get("type") == "tool_result" and blk.get("is_error"): errors += 1
+    if tools == 0: wr(S.STATE, state); sys.exit(0)          # pure chat turn: no job to judge
+    merits = []
+    if errors == 0:                 merits.append(("Clean run", 15, "no failed tool calls"))
+    if tools <= 6 and edits:        merits.append(("Short way", 20, f"done in {tools} tool calls"))
+    if tested:                      merits.append(("Wise way", 30, "verified with tests/typecheck"))
+    if reviewed:                    merits.append(("Insight", 10, "reviewed the diff before finishing"))
+    if edits and errors == 0 and tested and tools <= 10: merits.append(("Best way", 50, "clean, verified, efficient"))
+    missed = []
+    if errors:      missed.append(f"Clean run ({errors} tool error{'s' if errors > 1 else ''})")
+    if not tested and edits: missed.append("Wise way (no tests/typecheck run)")
+    if tools > 6 and edits:  missed.append(f"Short way ({tools} tool calls)")
+    lvl, _ = S.rank_for(agent, promos); mult = S.RANKS[lvl][4]
+    gained = int(round(sum(m[1] for m in merits) * mult))
+    ag = state.setdefault("agents", {}).setdefault(agent, {"xp": 0, "levelup_at": 0, "rank": None})
+    if gained:
+        ag["xp"] += gained; state["xp"] = state.get("xp", 0) + gained
+        ag["last_gain"] = gained; ag["gain_t"] = __import__("time").time()
+    ag["last_job"] = {"xp": gained, "merits": [m[0] for m in merits], "missed": missed, "tools": tools, "errors": errors, "tested": tested}
+    wr(S.STATE, state)
+    # tell the agent how the Council judged it (Stop hooks may print plain text back into context)
+    if merits or missed:
+        parts = [f"{m[0]} +{int(m[1]*mult)} ({m[2]})" for m in merits]
+        txt = f"⚔ Council judgement for this job: +{gained} XP" + (" · " + " · ".join(parts) if parts else "") + (f" · Missed: {', '.join(missed)}" if missed else "")
+        print(txt)
 elif op == "motivate":
     # Claude Code hook: stdin has {session_id, hook_event_name, ...}; map session → agent via state
     try: h = json.load(sys.stdin)
@@ -68,8 +117,12 @@ elif op == "motivate":
         goal = "You are a sworn Knight of the Council. Guide the Padawans; advance them with `jedi advance <agent>` when they earn it."
     else:
         goal = f"Higher stations await ({NAMES[min(lvl + 1, len(NAMES) - 1)]}). Mastery is shown, not claimed."
+    lj = state.get("agents", {}).get(agent, {}).get("last_job")
+    feedback = ""
+    if lj:
+        feedback = f" Last job: +{lj['xp']} XP" + (f" — {', '.join(lj['merits'])}" if lj.get("merits") else "") + (f"; missed {', '.join(lj['missed'])}" if lj.get("missed") else "") + "."
     ctx = (f"⚔ Jedi status: you are **{agent}**, rank **{title}** ({min(5, max(0, lvl - S.PADAWAN))}/5 trials, {xp:,} XP, ×{mult:g} XP rate). "
-           f"{goal} Do the work well; the rank follows. ❝ {random.choice(S.QUOTES)} ❞")
+           f"{goal}{feedback} Merits: Best way (clean + verified + efficient) +50, Wise way (run tests/typecheck) +30, Short way (≤6 tool calls) +20, Clean run (no tool errors) +15, Insight (review your diff) +10 — all × your tier rate. ❝ {random.choice(S.QUOTES)} ❞")
     ev = h.get("hook_event_name", "UserPromptSubmit")
     print(json.dumps({"hookSpecificOutput": {"hookEventName": ev, "additionalContext": ctx}}))
 else:

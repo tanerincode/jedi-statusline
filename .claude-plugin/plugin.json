@@ -1,7 +1,7 @@
 {
   "name": "jedi-statusline",
   "description": "A Star Wars-gamified status line for Claude Code: pulsing lightsaber, Jedi ranks earned through the five Trials, kyber crystals per turn, hyperdrive heat for context, Council promotions across your agents, iTerm2 badges and tab colours.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": { "name": "Taner Tombas" },
   "repository": "https://github.com/tanerincode/jedi-statusline",
   "license": "MIT",

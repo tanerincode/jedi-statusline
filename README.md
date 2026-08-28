@@ -11,6 +11,7 @@ A Star Wars-gamified status line for [Claude Code](https://code.claude.com). Eve
   Master → Guardian → Grand Master → Force Ghost → The Chosen One. Pin your orchestrator as a permanent Knight.
 - **Kyber crystals** count turns, **hyperdrive heat** is context usage (overheats at 80%), **₡ credits** = cost.
 - **Tier colours**: every rank has its own hue — saber, XP bar, crystals, badge and tab all follow it.
+- **Council judgement**: a `Stop` hook scores every finished job from the transcript and awards merit XP — *Best way* (clean + verified + efficient) +50, *Wise way* (ran tests/typecheck) +30, *Short way* (≤6 tool calls) +20, *Clean run* (no tool errors) +15, *Insight* (reviewed the diff) +10 — × tier rate, and tells the agent what it missed.
 - **Motivation hook**: on every prompt the agent is quietly told its rank, XP rate and what its next Trial demands (`hooks/hooks.json`, via `jedi motivate`), so agents know where they stand.
 - **Spinner** speaks Star Wars: `Channeling the Force… (25s)`, `Consulting the holocron…`, `Meditated for 26s`.
 - **iTerm2 extras**: a rank badge in the pane's top-right, tab colour by rank, pane title `⚔ Jedi Knight · kai-main`
