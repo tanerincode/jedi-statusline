@@ -243,8 +243,12 @@ def main():
     # agent's alignment and points the way it last moved ( > toward the light, < toward the dark )
     W = 9
     pos = round((align + 100) / 200 * (W - 1))
-    mark = "<" if ag.get("align_dir", 1) < 0 else ">"
-    abar = c(244, "-" * pos) + c(255, b(mark)) + c(244, "-" * (W - 1 - pos))
+    # marker: ● at the agent's alignment; a faint ▸/◂ trails it to show the last drift
+    d = ag.get("align_dir", 0)
+    left  = "-" * pos; right = "-" * (W - 1 - pos)
+    if d < 0 and right: right = "◂" + right[1:]
+    if d > 0 and left:  left = left[:-1] + "▸"
+    abar = c(244, left) + c(255, b("●")) + c(244, right)
     acol = 255
     line1 = f"{abar} {c(244, f'{align:+d}')}  {head}  {bar(frac, 12, '▰', '▱', col)} {xp_txt}"
 
