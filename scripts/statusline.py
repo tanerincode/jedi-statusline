@@ -101,6 +101,15 @@ SITH_QUOTES = [
     "The dark side of the Force is a pathway to many abilities. — Palpatine",
     "You underestimate the power of the dark side. — Vader",
 ]
+def slider(align, d=1, W=9):
+    """dark ---●▸--- light : ● at alignment, arrow shows last drift (defaults toward the light)."""
+    pos = round((align + 100) / 200 * (W - 1))
+    left = "-" * pos; right = "-" * (W - 1 - pos)
+    if d < 0 and right: right = "◂" + right[1:]
+    elif left:          left = left[:-1] + "▸"
+    elif right:         right = "▸" + right[1:]
+    return left, right
+
 def dark_tier(align):
     for th, fn, col, rgb in DARK_TIERS:
         if align <= th: return fn, col, rgb
@@ -155,7 +164,7 @@ def git_branch(cwd, st, now):
     cache[cwd] = {"b": br, "t": now}
     return br
 
-def iterm(st, title, xp, name, rgb, promoted, lvl):
+def iterm(st, title, xp, name, rgb, promoted, lvl, align=ALIGN_START, adir=1):
     """iTerm2 badge / tab colour / title, written straight to the pane's tty."""
     key = [title, name, xp // 50, promoted]
     if st.get("iterm_last") == key: return
@@ -163,7 +172,8 @@ def iterm(st, title, xp, name, rgb, promoted, lvl):
     except Exception: return
     try:
         trials = f"\n{lvl - PADAWAN}/5 trials" if PADAWAN <= lvl < KNIGHT else ""
-        badge = ("★ PROMOTED ★\n" if promoted else "") + f"⚔ {title}" + (f"\n{name}" if name else "") + f"\n{xp:,} XP{trials}"
+        l, r = slider(align, adir)
+        badge = ("★ PROMOTED ★\n" if promoted else "") + f"⚔ {title}" + (f"\n{name}" if name else "") + f"\n{xp:,} XP{trials}\n{l}●{r} {align:+d}"
         b64 = base64.b64encode(badge.encode()).decode()
         r, g, bl = rgb
         seq = (f"\033]1337;SetBadgeFormat={b64}\007"
@@ -241,13 +251,7 @@ def main():
         xp_txt += " " + c(GREEN, b(f"+{ag['last_gain']} XP")) + c(DIM, f" ×{mult:g}")
     # alignment slider: dark end on the left, light on the right; the white marker sits at the
     # agent's alignment and points the way it last moved ( > toward the light, < toward the dark )
-    W = 9
-    pos = round((align + 100) / 200 * (W - 1))
-    # marker: ● at the agent's alignment; a faint ▸/◂ trails it to show the last drift
-    d = ag.get("align_dir", 0)
-    left  = "-" * pos; right = "-" * (W - 1 - pos)
-    if d < 0 and right: right = "◂" + right[1:]
-    if d > 0 and left:  left = left[:-1] + "▸"
+    left, right = slider(align, ag.get("align_dir", 1))
     abar = c(244, left) + c(255, b("●")) + c(244, right)
     acol = 255
     line1 = f"{abar} {c(244, f'{align:+d}')}  {head}  {bar(frac, 12, '▰', '▱', col)} {xp_txt}"
@@ -269,7 +273,7 @@ def main():
     q = SITH_QUOTES[st["quote_i"] % len(SITH_QUOTES)] if align <= -20 else QUOTES[st["quote_i"]]
     line3 = c(DIM if align > -20 else 124, "  ❝ " + q + " ❞")
 
-    iterm(st, title, ag["xp"], name, rgb, promoted, lvl)
+    iterm(st, title, ag["xp"], name, rgb, promoted, lvl, align, ag.get("align_dir", 1))
     st["last"] = [line1, line2, line3]
     save(st)
     print(line1); print(line2); print(line3)

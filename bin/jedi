@@ -209,4 +209,5 @@ else:
     for n, a in sorted(state.get("agents", {}).items(), key=lambda kv: -kv[1].get("xp", 0)):
         r, fixed = S.rank_for(n, promos)
         al = a.get("align", S.ALIGN_START); dt = S.dark_tier(al); title = dt[0](NAMES[r]) if dt else NAMES[r]
-        print(f"{title:22} {n:28} {a.get('xp', 0):>8,} XP  ×{S.RANKS[r][4]:g}  {'☠' if al <= -20 else '☀'} {al:+d}" + ("  ⚔ sworn" if fixed else ""))
+        l, rr = S.slider(al, a.get("align_dir", 1))
+        print(f"{title:22} {n:28} {a.get('xp', 0):>8,} XP  ×{S.RANKS[r][4]:g}  {l}●{rr} {al:+d}" + ("  ⚔ sworn" if fixed else ""))
