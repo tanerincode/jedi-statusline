@@ -2,11 +2,7 @@
 
 A Star Wars-gamified status line for [Claude Code](https://code.claude.com). Every session becomes a Jedi.
 
-```
-╞▍━━━ Padawan ◆◆◆◆ · Trial of Spirit passed   ▰▰▰▰▰▰▰▰▰▱▱▱  5,446 XP · 4/5 trials
-  ◆◆◇◇◇◇◇◇◇◇◇◇ 2 turns   ▮▮▮▮▮▮▮▮▯▯ 84% ⚠ overheating   │ Fable 5 · high ·  dev · ss-surgent · ₡250
-  ❝ Do. Or do not. There is no try. — Yoda ❞
-```
+![jedi-statusline in action](docs/statusline.png)
 
 - **Lightsaber** pulses every second; blade colour follows your rank.
 - **XP** per session name: 1 per cent spent, 1 per line changed, 5 per turn. Bragging rights only —
