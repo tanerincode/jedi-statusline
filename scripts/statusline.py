@@ -14,26 +14,44 @@ STATE  = f"{DIR}/state.json"
 PROMOS = f"{DIR}/promotions.json"
 LEDGER = f"{DIR}/ledger.jsonl"
 
+class Lock:
+    """Exclusive file lock; fcntl on POSIX, msvcrt on Windows."""
+    def __init__(self, path): self.path = path; self.f = None
+    def __enter__(self):
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        self.f = open(self.path, "a+")
+        try:
+            import fcntl; fcntl.flock(self.f, fcntl.LOCK_EX)
+        except ImportError:
+            import msvcrt
+            self.f.seek(0); msvcrt.locking(self.f.fileno(), msvcrt.LK_LOCK, 1)
+        return self.f
+    def __exit__(self, *a):
+        try:
+            import fcntl; fcntl.flock(self.f, fcntl.LOCK_UN)
+        except ImportError:
+            import msvcrt
+            self.f.seek(0); msvcrt.locking(self.f.fileno(), msvcrt.LK_UNLCK, 1)
+        self.f.close()
+
+CONFIG = f"{DIR}/config.json"
+def config(): return load_json(CONFIG, {})
+
 def ledger_append(ev):
     """Append-only, hash-chained record. Each line carries sha256(prev_hash + payload).
     Serialised with an exclusive file lock: many sessions append concurrently."""
-    import hashlib, fcntl
-    os.makedirs(DIR, exist_ok=True)
-    with open(LEDGER, "a+") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
-            prev = "genesis"
-            f.seek(0, 2); size = f.tell(); f.seek(max(0, size - 4096))
-            tail = f.read().strip().splitlines()
-            if tail:
-                try: prev = json.loads(tail[-1]).get("hash", prev)
-                except Exception: pass
-            ev = dict(ev); ev["t"] = round(time.time(), 3); ev["prev"] = prev
-            payload = json.dumps({k: v for k, v in ev.items() if k != "hash"}, sort_keys=True)
-            ev["hash"] = hashlib.sha256((prev + payload).encode()).hexdigest()[:24]
-            f.seek(0, 2); f.write(json.dumps(ev, sort_keys=True) + "\n"); f.flush()
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+    import hashlib
+    with Lock(LEDGER + ".lock"), open(LEDGER, "a+", encoding="utf-8") as f:
+        prev = "genesis"
+        f.seek(0, 2); size = f.tell(); f.seek(max(0, size - 4096))
+        tail = f.read().strip().splitlines()
+        if tail:
+            try: prev = json.loads(tail[-1]).get("hash", prev)
+            except Exception: pass
+        ev = dict(ev); ev["t"] = round(time.time(), 3); ev["prev"] = prev
+        payload = json.dumps({k: v for k, v in ev.items() if k != "hash"}, sort_keys=True)
+        ev["hash"] = hashlib.sha256((prev + payload).encode()).hexdigest()[:24]
+        f.seek(0, 2); f.write(json.dumps(ev, sort_keys=True) + "\n"); f.flush()
     return ev["hash"]
 
 def c(n, s): return f"\033[38;5;{n}m{s}\033[0m"
@@ -119,14 +137,14 @@ SABER = ["▏", "▎", "▍", "▌", "▋", "▊", "▉", "█", "▉", "▊", "
 # ---- state ------------------------------------------------------------------
 def load_json(p, default):
     try:
-        with open(p) as f: return json.load(f)
+        with open(p, encoding="utf-8") as f: return json.load(f)
     except Exception:
         return default
 
 def save(st):
     os.makedirs(DIR, exist_ok=True)
     tmp = STATE + ".tmp"
-    with open(tmp, "w") as f: json.dump(st, f)
+    with open(tmp, "w", encoding="utf-8") as f: json.dump(st, f)
     os.replace(tmp, STATE)
 
 def rank_index(v):
@@ -167,6 +185,7 @@ def iterm(st, title, xp, name, rgb, promoted, lvl, align=ALIGN_START, adir=1):
     """iTerm2 badge / tab colour / title, written straight to the pane's tty."""
     key = [title, name, xp // 50, promoted]
     if st.get("iterm_last") == key: return
+    if not os.path.exists("/dev/tty"): return
     try: fd = os.open("/dev/tty", os.O_WRONLY | os.O_NOCTTY)
     except Exception: return
     try:
@@ -276,12 +295,7 @@ def main():
     print(line1); print(line2)
 
 def locked_main():
-    import fcntl
-    os.makedirs(DIR, exist_ok=True)
-    with open(f"{DIR}/.lock", "w") as lk:
-        fcntl.flock(lk, fcntl.LOCK_EX)
-        try: main()
-        finally: fcntl.flock(lk, fcntl.LOCK_UN)
+    with Lock(f"{DIR}/.lock"): main()
 
 if __name__ == "__main__":
     try: locked_main()

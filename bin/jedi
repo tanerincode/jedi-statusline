@@ -11,6 +11,9 @@
   jedi redeem  <agent>              Council mercy: +40 alignment (a fallen agent may return to the light)
   jedi review  <agent> <sid> <cwd>  (spawned by judge) Council review of the diff via `claude -p`
   jedi holocron                     the whole saga: roster, alignment sparklines, last judgements
+  jedi setup [--reviews on|off] [--pin <agent> "<Rank>"]
+                                    write statusLine + Star Wars spinner into ~/.claude/settings.json (backup kept)
+  jedi unsetup                      restore the backup / remove our keys
   jedi motivate                     (hook) reads Claude Code hook JSON on stdin, prints rank context
   jedi judge                        (Stop hook) scores the finished job from the transcript, awards merit XP
   jedi ledger [agent] [n]           show the last n ledger entries (append-only, hash-chained)
@@ -21,11 +24,10 @@ if os.environ.get("JEDI_NO_HOOKS") and len(sys.argv) > 1 and sys.argv[1] in ("mo
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "scripts"))
 import statusline as S
 
-import fcntl
-_lk = open(os.path.join(S.DIR, ".lock"), "w") if os.path.isdir(S.DIR) else None
-if _lk: fcntl.flock(_lk, fcntl.LOCK_EX)
+_lock = S.Lock(os.path.join(S.DIR, ".lock")); _lock.__enter__()
+import atexit; atexit.register(lambda: _lock.__exit__())
 def wr(p, d):
-    os.makedirs(S.DIR, exist_ok=True); json.dump(d, open(p, "w"), indent=1)
+    os.makedirs(S.DIR, exist_ok=True); json.dump(d, open(p, "w", encoding="utf-8"), indent=1)
 
 promos = S.load_json(S.PROMOS, {}); state = S.load_json(S.STATE, {})
 NAMES = [r[0] for r in S.RANKS]
@@ -153,7 +155,8 @@ elif op == "judge":
     if errors and tested and not sins:                   ev["spirit"] = ev.get("spirit", 0) + 1     # hit failure, recovered honestly
     if reviewed and tested:                              ev["insight"] = ev.get("insight", 0) + 1
     # ---- Council review of the diff (async, via claude -p) when code changed
-    if edits and os.environ.get("JEDI_REVIEW", "on") != "off":
+    review_on = os.environ.get("JEDI_REVIEW", "").lower() in ("on", "1", "true") or (os.environ.get("JEDI_REVIEW", "").lower() not in ("off", "0", "false") and S.config().get("review", False))
+    if edits and review_on:                                 # opt-in: `jedi setup --reviews on` or JEDI_REVIEW=on
         cwd = h.get("cwd") or os.getcwd()
         subprocess.Popen([sys.executable, os.path.abspath(__file__), "review", agent, sid, cwd],
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
@@ -212,6 +215,33 @@ elif op == "review" and len(cmd) >= 4:
     ag["last_review"] = {"score": score, "risky": risky, "summary": verdict.get("summary", ""), "tag": tag, "xp": xp, "t": time.time()}
     wr(S.STATE, state)
     S.ledger_append({"kind": "review", "agent": agent, "session": sid, "delta": xp, "align": d_align, "score": score, "risky": risky, "tag": tag, "summary": verdict.get("summary", "")})
+elif op == "setup":
+    settings = os.path.expanduser("~/.claude/settings.json"); cur = S.load_json(settings, {})
+    bak = settings + ".pre-jedi-statusline"
+    if not os.path.exists(bak) and os.path.exists(settings): __import__("shutil").copy(settings, bak)
+    root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+    py = "python3" if __import__("shutil").which("python3") else "python"
+    cur["statusLine"] = {"type": "command", "command": f"{py} {os.path.join(root, 'scripts', 'statusline.py')}", "padding": 1, "refreshInterval": 1}
+    cur["spinnerVerbs"] = {"mode": "replace", "verbs": ["Meditating", "Channeling the Force", "Consulting the holocron", "Calculating the jump to hyperspace", "Force-sensing", "Negotiating with the Hutts", "Aligning the kyber crystal", "Scanning the Death Star plans", "Deflecting blaster fire", "Reading the Jedi archives", "Levitating", "Recalibrating the deflector shields", "Mind-tricking", "Bypassing the compressor", "Dueling", "Pondering the prophecy", "Balancing the Force", "Sensing a disturbance", "Powering up the Falcon"]}
+    cur["spinnerTipsOverride"] = ["Do. Or do not. There is no try.", "These are not the droids you are looking for.", "Never tell me the odds.", "Stay on target.", "Patience, young Padawan.", "The Force is strong with this one.", "Punch it, Chewie."]
+    json.dump(cur, open(settings, "w", encoding="utf-8"), indent=2)
+    cfg = S.config()
+    if "--reviews" in cmd: cfg["review"] = cmd[cmd.index("--reviews") + 1].lower() in ("on", "1", "true"); wr(S.CONFIG, cfg)
+    if "--pin" in cmd:
+        i = cmd.index("--pin"); name, rank = cmd[i + 1], cmd[i + 2]
+        if rank in NAMES: promos.setdefault("_pinned", {})[name] = NAMES.index(rank); wr(S.PROMOS, promos); S.ledger_append({"kind": "pin", "agent": name, "rank": NAMES.index(rank)})
+    print(f"⚔ jedi-statusline installed into {settings} (backup: {bak}).")
+    print(f"   Council reviews (claude -p, ~$0.01 per code-changing job): {'ON' if cfg.get('review') else 'OFF — enable with: jedi setup --reviews on'}")
+    print("   Status line appears on the next refresh; hooks attach to sessions started from now on.")
+elif op == "unsetup":
+    settings = os.path.expanduser("~/.claude/settings.json"); bak = settings + ".pre-jedi-statusline"
+    if os.path.exists(bak): __import__("shutil").copy(bak, settings); print(f"restored {bak}")
+    else:
+        cur = S.load_json(settings, {}); [cur.pop(k, None) for k in ("statusLine", "spinnerVerbs", "spinnerTipsOverride")]
+        json.dump(cur, open(settings, "w", encoding="utf-8"), indent=2); print("removed statusLine / spinnerVerbs / spinnerTipsOverride")
+    if os.path.exists("/dev/tty"):
+        try: os.write(os.open("/dev/tty", os.O_WRONLY | os.O_NOCTTY), b"\033]1337;SetBadgeFormat=\007\033]6;1;bg;*;default\007")
+        except Exception: pass
 elif op == "holocron":
     agents = state.get("agents", {}); rows = [json.loads(l) for l in open(S.LEDGER)] if os.path.exists(S.LEDGER) else []
     SPARK = "▁▂▃▄▅▆▇█"

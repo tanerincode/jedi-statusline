@@ -1,23 +1,20 @@
 ---
 name: setup
-description: Install the jedi-statusline status line, Star Wars spinner verbs and tips into the user's ~/.claude/settings.json (with a backup). Use when the user runs /jedi-statusline:setup or asks to enable the Star Wars status line.
+description: Install the jedi-statusline status line and Star Wars spinner into the user's ~/.claude/settings.json (backup kept), and choose whether Council reviews (claude -p, small cost) are on. Use when the user runs /jedi-statusline:setup or asks to enable the Star Wars status line.
 ---
 
 # /jedi-statusline:setup
 
-Plugins cannot set `statusLine` or `spinnerVerbs` themselves, so this skill writes them to the user's settings with their consent.
+Plugins cannot set `statusLine` or `spinnerVerbs` themselves, so this writes them to the user's settings with consent.
 
-1. Tell the user exactly what will change in `~/.claude/settings.json`: the `statusLine`, `spinnerVerbs` and `spinnerTipsOverride` keys. Ask for a yes before writing.
-2. Back up: `cp ~/.claude/settings.json ~/.claude/settings.json.pre-jedi-statusline`
-3. Merge with jq (do not overwrite other keys):
+1. Tell the user what will change in `~/.claude/settings.json` (`statusLine`, `spinnerVerbs`, `spinnerTipsOverride`; a backup is kept at `settings.json.pre-jedi-statusline`) and ask two questions:
+   - **Council reviews?** Each code-changing job is reviewed in the background by `claude -p` (Haiku by default) — about $0.01 per job. Default OFF. Only turn on with an explicit yes.
+   - **Pin an orchestrator?** e.g. their main session name as a permanent Jedi Knight (optional).
+2. Run (pick the flags from the answers):
 
 ```bash
-jq --arg cmd "python3 ${CLAUDE_PLUGIN_ROOT}/scripts/statusline.py" '
-  .statusLine = {"type":"command","command":$cmd,"padding":1,"refreshInterval":1}
-  | .spinnerVerbs = {"mode":"replace","verbs":["Meditating","Channeling the Force","Consulting the holocron","Calculating the jump to hyperspace","Force-sensing","Negotiating with the Hutts","Aligning the kyber crystal","Scanning the Death Star plans","Deflecting blaster fire","Reading the Jedi archives","Levitating","Recalibrating the deflector shields","Mind-tricking","Bypassing the compressor","Dueling","Pondering the prophecy","Balancing the Force","Sensing a disturbance","Powering up the Falcon"]}
-  | .spinnerTipsOverride = ["Do. Or do not. There is no try.","These are not the droids you are looking for.","Never tell me the odds.","Stay on target.","Patience, young Padawan.","The Force is strong with this one.","Punch it, Chewie."]
-' ~/.claude/settings.json > ~/.claude/settings.json.tmp && mv ~/.claude/settings.json.tmp ~/.claude/settings.json
+python3 ${CLAUDE_PLUGIN_ROOT}/bin/jedi setup --reviews off
+python3 ${CLAUDE_PLUGIN_ROOT}/bin/jedi setup --reviews on --pin kai-main "Jedi Knight"
 ```
 
-4. Optionally pin the user's orchestrator: `${CLAUDE_PLUGIN_ROOT}/bin/jedi pin <session-name> "Jedi Knight"`.
-5. Explain: the status line appears on the next refresh; ranks are granted with `/jedi-statusline:council`; XP lives in `~/.claude/jedi-statusline/state.json`. Requires `python3` and `jq`. iTerm2 users also get a badge, tab colour and pane title.
+3. Relay the tool's output. Note: hooks (judgement, motivation) attach to sessions started from now on; already-running sessions must be restarted. Requires `python3`. iTerm2 users also get a badge, tab colour and pane title; other terminals just get the status line.
