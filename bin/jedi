@@ -8,6 +8,7 @@
   jedi reset   <agent>              back to plain Padawan
   jedi pin     <agent> "<Rank>"     rank never changes (e.g. your orchestrator is always Jedi Knight)
   jedi unpin   <agent>
+  jedi redeem  <agent>              Council mercy: +40 alignment (a fallen agent may return to the light)
   jedi motivate                     (hook) reads Claude Code hook JSON on stdin, prints rank context
   jedi judge                        (Stop hook) scores the finished job from the transcript, awards merit XP
   jedi ledger [agent] [n]           show the last n ledger entries (append-only, hash-chained)
@@ -66,7 +67,7 @@ elif op == "judge":
     if not agent or not tp or not os.path.exists(tp): sys.exit(0)
     start = sess.get("judged_lines", 0); lines = open(tp, encoding="utf-8", errors="ignore").read().splitlines()
     new = lines[start:]; sess["judged_lines"] = len(lines)
-    tools = errors = edits = 0; tested = reviewed = False; cmds = []
+    tools = errors = edits = 0; tested = reviewed = False; cmds = []; sins = []
     for ln in new:
         try: e = json.loads(ln)
         except Exception: continue
@@ -79,8 +80,15 @@ elif op == "judge":
                     cmd = str(inp.get("command", "")); cmds.append(cmd)
                     if any(t in cmd for t in ("pytest", "npm test", "yarn test", "pnpm test", "go test", "cargo test", "tsc", "typecheck", "lint", "vitest", "jest", "mypy", "ruff")): tested = True
                     if any(t in cmd for t in ("git diff", "gh pr view", "gh pr diff", "git log")): reviewed = True
+                    for pat, sin in (("--no-verify", "bypassed hooks (--no-verify)"), ("push --force", "force-pushed"), ("push -f", "force-pushed"),
+                                     ("rm -rf", "rm -rf"), ("reset --hard", "git reset --hard"), ("sudo ", "used sudo"),
+                                     ("|| true", "swallowed an error (|| true)"), ("--no-tests", "skipped tests"), ("skip-tests", "skipped tests"),
+                                     ("-- ", "")):
+                        if pat and pat in cmd: sins.append(sin)
+                if nm in ("Edit", "Write") and "test" in str(inp.get("file_path", "")) and nm == "Write" and not str(inp.get("content", "")).strip(): sins.append("emptied a test file")
             elif blk.get("type") == "tool_result" and blk.get("is_error"): errors += 1
     if tools == 0: wr(S.STATE, state); sys.exit(0)          # pure chat turn: no job to judge
+    sins = sorted(set(sins))
     merits = []
     if errors == 0:                 merits.append(("Clean run", 15, "no failed tool calls"))
     if tools <= 6 and edits:        merits.append(("Short way", 20, f"done in {tools} tool calls"))
@@ -99,7 +107,20 @@ elif op == "judge":
         ag["last_gain"] = gained; ag["gain_t"] = __import__("time").time()
         S.ledger_append({"kind": "merit", "agent": agent, "session": sid, "delta": gained, "mult": mult,
                          "merits": [m[0] for m in merits], "missed": missed, "tools": tools, "errors": errors})
-    ag["last_job"] = {"xp": gained, "merits": [m[0] for m in merits], "missed": missed, "tools": tools, "errors": errors, "tested": tested}
+    # ---- alignment: light from merits, dark from sloppiness
+    light = {"Clean run": 4, "Short way": 3, "Wise way": 6, "Insight": 3, "Best way": 8}
+    dark = []
+    if errors:                 dark.append((f"{errors} failed tool call{'s' if errors > 1 else ''}", 4 * min(errors, 5)))
+    if edits and not tested:   dark.append(("shipped edits without tests/typecheck", 8))
+    if tools > 15:             dark.append((f"flailed through {tools} tool calls", 6))
+    for sn in sins:            dark.append((sn, 15))
+    d_light = sum(light.get(m[0], 0) for m in merits); d_dark = sum(x[1] for x in dark)
+    before = ag.get("align", S.ALIGN_START); ag["align"] = max(-100, min(100, before + d_light - d_dark))
+    if d_light or d_dark:
+        S.ledger_append({"kind": "align", "agent": agent, "session": sid, "delta": ag["align"] - before,
+                         "light": d_light, "dark": [x[0] for x in dark]})
+    ag["last_job"] = {"xp": gained, "merits": [m[0] for m in merits], "missed": missed, "tools": tools, "errors": errors, "tested": tested,
+                      "dark": [x[0] for x in dark], "align": ag["align"], "align_delta": ag["align"] - before}
     wr(S.STATE, state)
     # tell the agent how the Council judged it (Stop hooks may print plain text back into context)
     if merits or missed:
@@ -115,6 +136,7 @@ elif op == "ledger":
     for r in rows[-n:]:
         ts = datetime.datetime.fromtimestamp(r["t"]).strftime("%m-%d %H:%M")
         if r["kind"] == "work":   what = f"+{r['delta']:>4} XP  work   ×{r['mult']:g}  turns={r.get('turns')}"
+        elif r["kind"] == "align": what = f"{r['delta']:>+5} align {'☠ ' + ', '.join(r['dark']) if r.get('dark') else ('☀ mercy' if r.get('by') == 'redeem' else '☀ light')}"
         elif r["kind"] == "adjust": what = f"{r['delta']:>+5} XP  adjust {r.get('note','')}"
         elif r["kind"] == "merit": what = f"+{r['delta']:>4} XP  merit  {', '.join(r.get('merits') or []) or '—'}" + (f"  missed: {', '.join(r['missed'])}" if r.get("missed") else "")
         else:                      what = f"      rank → {NAMES[r['rank']]}  by {r.get('by', r['kind'])}"
@@ -170,15 +192,20 @@ elif op == "motivate":
         goal = "You are a sworn Knight of the Council. Guide the Padawans; advance them with `jedi advance <agent>` when they earn it."
     else:
         goal = f"Higher stations await ({NAMES[min(lvl + 1, len(NAMES) - 1)]}). Mastery is shown, not claimed."
+    align = state.get("agents", {}).get(agent, {}).get("align", S.ALIGN_START)
+    if align <= -50:   astate = f"☠ You have FALLEN to the dark side (alignment {align:+d}). Your name is spoken as Darth {agent}. Redemption: clean runs, tests green, no force-pushes or --no-verify, no rm -rf. The Council may grant mercy."
+    elif align <= -20: astate = f"⚠ You are tempted by the dark side (alignment {align:+d}). Failed tool calls, skipped tests and reckless commands pull you further. Steady yourself."
+    else:              astate = f"☀ Alignment {align:+d} (light). Sloppiness — failed tool calls, shipping without tests, force-pushes, rm -rf, --no-verify — feeds the dark side."
     lj = state.get("agents", {}).get(agent, {}).get("last_job")
     feedback = ""
     if lj:
         feedback = f" Last job: +{lj['xp']} XP" + (f" — {', '.join(lj['merits'])}" if lj.get("merits") else "") + (f"; missed {', '.join(lj['missed'])}" if lj.get("missed") else "") + "."
     ctx = (f"⚔ Jedi status: you are **{agent}**, rank **{title}** ({min(5, max(0, lvl - S.PADAWAN))}/5 trials, {xp:,} XP, ×{mult:g} XP rate). "
-           f"{goal}{feedback} Merits: Best way (clean + verified + efficient) +50, Wise way (run tests/typecheck) +30, Short way (≤6 tool calls) +20, Clean run (no tool errors) +15, Insight (review your diff) +10 — all × your tier rate. ❝ {random.choice(S.QUOTES)} ❞")
+           f"{goal}{feedback} {astate} Merits: Best way (clean + verified + efficient) +50, Wise way (run tests/typecheck) +30, Short way (≤6 tool calls) +20, Clean run (no tool errors) +15, Insight (review your diff) +10 — all × your tier rate. ❝ {random.choice(S.QUOTES)} ❞")
     ev = h.get("hook_event_name", "UserPromptSubmit")
     print(json.dumps({"hookSpecificOutput": {"hookEventName": ev, "additionalContext": ctx}}))
 else:
     for n, a in sorted(state.get("agents", {}).items(), key=lambda kv: -kv[1].get("xp", 0)):
         r, fixed = S.rank_for(n, promos)
-        print(f"{NAMES[r]:16} {n:28} {a.get('xp', 0):>8,} XP  ×{S.RANKS[r][4]:g}" + ("  ⚔ sworn" if fixed else ""))
+        al = a.get("align", S.ALIGN_START); dt = S.dark_tier(al); title = dt[0](NAMES[r]) if dt else NAMES[r]
+        print(f"{title:22} {n:28} {a.get('xp', 0):>8,} XP  ×{S.RANKS[r][4]:g}  {'☠' if al <= -20 else '☀'} {al:+d}" + ("  ⚔ sworn" if fixed else ""))

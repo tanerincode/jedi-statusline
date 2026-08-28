@@ -83,6 +83,29 @@ QUOTES = [
     "It's a trap! — Admiral Ackbar",
 ]
 
+# ---- the dark side ----------------------------------------------------------
+# alignment ∈ [-100, +100]; every agent starts at +50. Merits pull toward the light,
+# sloppy work (errors, skipped tests, force pushes, rm -rf, --no-verify, flailing) toward the dark.
+ALIGN_START = 50
+DARK_TIERS = [   # (threshold, title-transform, colour, rgb)
+    (-80, lambda t: "Sith Lord",             124, (160,  20,  20)),
+    (-50, lambda t: "Sith Apprentice",       196, (255,  40,  40)),
+    (-20, lambda t: t + " ⚠ tempted",        202, (255,  90,  40)),
+]
+SITH_QUOTES = [
+    "Peace is a lie, there is only passion. — Sith Code",
+    "Give in to your anger. — Palpatine",
+    "I find your lack of faith disturbing. — Vader",
+    "You don't know the power of the dark side. — Vader",
+    "Good. Use your aggressive feelings. — Palpatine",
+    "The dark side of the Force is a pathway to many abilities. — Palpatine",
+    "You underestimate the power of the dark side. — Vader",
+]
+def dark_tier(align):
+    for th, fn, col, rgb in DARK_TIERS:
+        if align <= th: return fn, col, rgb
+    return None
+
 SABER = ["▏", "▎", "▍", "▌", "▋", "▊", "▉", "█", "▉", "▊", "▋", "▌", "▍", "▎"]
 
 # ---- state ------------------------------------------------------------------
@@ -173,6 +196,13 @@ def main():
     ag["t"] = now
     lvl, fixed = rank_for(agent_key)
     title, epithet, col, rgb, mult = RANKS[lvl]
+    align = ag.get("align", ALIGN_START)
+    dt = dark_tier(align)
+    if dt:
+        fn, dcol, drgb = dt
+        title = fn(title); col, rgb = dcol, drgb
+        if align <= -50 and name: name = "Darth " + name
+        if align <= -50: epithet = "the Council watches"
 
     # ---- XP: (1/cent + 1/line + 5/turn) × tier multiplier
     s = st.setdefault("sessions", {}).setdefault(sid, {"cost": 0.0, "lines": 0, "kyber": 0, "last_prompt": None, "t": now})
@@ -210,7 +240,11 @@ def main():
     xp_txt = c(CREAM, f"{ag['xp']:,} XP") + c(DIM, tail_txt)
     if now - ag.get("gain_t", 0) < 8 and ag.get("last_gain"):
         xp_txt += " " + c(GREEN, b(f"+{ag['last_gain']} XP")) + c(DIM, f" ×{mult:g}")
-    line1 = f"{saber} {head}  {bar(frac, 12, '▰', '▱', col)} {xp_txt}"
+    # alignment: ☀ light ←→ dark ☠
+    a01 = (align + 100) / 200
+    acol = GREEN if align >= 20 else (GOLD if align >= -20 else RED)
+    abar = c(acol, "☀ ") + bar(a01, 8, "▰", "▱", acol) + c(acol, " ☠") if align < 20 else c(acol, "☀ ") + bar(a01, 8, "▰", "▱", acol) + c(DIM, " ☠")
+    line1 = f"{saber} {head}  {bar(frac, 12, '▰', '▱', col)} {xp_txt}  {abar} {c(acol, f'{align:+d}')}"
 
     # ---- line 2: kyber · hyperdrive · model · branch · session · credits
     k = s["kyber"]; crystals = "".join("◆" if i < k % 12 else "◇" for i in range(12))
@@ -226,7 +260,8 @@ def main():
     if name:   tail.append(c(col, name))
     tail.append(c(GOLD, f"₡{cost * 100:,.0f}"))
     line2 = f"  {kyber}  {heat}  " + c(DIM, "│ ") + c(DIM, " · ").join(tail)
-    line3 = c(DIM, "  ❝ " + QUOTES[st["quote_i"]] + " ❞")
+    q = SITH_QUOTES[st["quote_i"] % len(SITH_QUOTES)] if align <= -20 else QUOTES[st["quote_i"]]
+    line3 = c(DIM if align > -20 else 124, "  ❝ " + q + " ❞")
 
     iterm(st, title, ag["xp"], name, rgb, promoted, lvl)
     st["last"] = [line1, line2, line3]
