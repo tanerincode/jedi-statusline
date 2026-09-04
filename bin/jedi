@@ -112,8 +112,6 @@ elif op == "judge":
     tools = errors = edits = 0; tested = reviewed = False; cmds = []; sins = []
     counsel_fail = 0; last_user_cmd = None
     final_text = []; pr_opened = False; praise = displeasure = 0
-    PRAISE = re.compile(r"\b(well done|good job|great job|great work|nice work|good work|perfect|excellent|awesome|brilliant|bravo|love it|works? (well|great|perfectly)|working (well|great|perfectly)|thank you|thanks|teşekkür|harika|süper|mükemmel|aferin|eline sağlık)\b|👏|🙏|🔥", re.I)
-    UNHAPPY = re.compile(r"\b(not working|doesn'?t work|isn'?t working|still broken|you broke|wrong|why did you|what did you do|stop doing|çalışmıyor|yanlış|bozdun|olmadı)\b", re.I)                  # commands the user ran with `!` — the agent's counsel
     for ln in new:
         try: e = json.loads(ln)
         except Exception: continue
@@ -121,8 +119,8 @@ elif op == "judge":
         if e.get("type") == "user":
             utext = content if isinstance(content, str) else " ".join(b.get("text", "") for b in (content or []) if isinstance(b, dict) and b.get("type") == "text")
             if utext and not utext.startswith("<"):            # a real human prompt, not bash-input/tool_result/system tags
-                if PRAISE.search(utext): praise += 1
-                if UNHAPPY.search(utext): displeasure += 1
+                if S.PRAISE.search(utext): praise += 1
+                if S.UNHAPPY.search(utext): displeasure += 1
         if e.get("type") == "user" and isinstance(content, str):
             if content.startswith("<bash-input>"):
                 last_user_cmd = content
@@ -146,11 +144,7 @@ elif op == "judge":
                     if any(t in cmd for t in ("pytest", "npm test", "yarn test", "pnpm test", "go test", "cargo test", "tsc", "typecheck", "lint", "vitest", "jest", "mypy", "ruff")): tested = True
                     if any(t in cmd for t in ("git diff", "gh pr view", "gh pr diff", "git log")): reviewed = True
                     if "gh pr create" in cmd: pr_opened = True
-                    for pat, sin in (("--no-verify", "bypassed hooks (--no-verify)"), ("push --force", "force-pushed"), ("push -f", "force-pushed"),
-                                     ("rm -rf", "rm -rf"), ("reset --hard", "git reset --hard"), ("sudo ", "used sudo"),
-                                     ("|| true", "swallowed an error (|| true)"), ("--no-tests", "skipped tests"), ("skip-tests", "skipped tests"),
-                                     ("-- ", "")):
-                        if pat and pat in cmd: sins.append(sin)
+                    sins += S.sins_for(cmd)
                 if nm in ("Edit", "Write") and "test" in str(inp.get("file_path", "")) and nm == "Write" and not str(inp.get("content", "")).strip(): sins.append("emptied a test file")
             elif blk.get("type") == "tool_result" and blk.get("is_error"): errors += 1
     import re

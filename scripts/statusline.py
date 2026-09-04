@@ -7,7 +7,7 @@ lightsaber, tier-coloured rank, XP bar with live +XP ticker, kyber crystals
 for turns, hyperdrive heat (context), credits, branch, holocron quote.
 Ranks are granted by the Council (bin/jedi), never by XP.
 """
-import json, os, sys, time, random, subprocess, base64
+import json, os, sys, time, random, re, subprocess, base64
 
 DIR    = os.environ.get("JEDI_DIR") or os.path.expanduser("~/.claude/jedi-statusline")
 STATE  = f"{DIR}/state.json"
@@ -104,6 +104,37 @@ QUOTES = [
 # alignment ∈ [-100, +100]; every agent starts at +50. Merits pull toward the light,
 # sloppy work (errors, skipped tests, force pushes, rm -rf, --no-verify, flailing) toward the dark.
 ALIGN_START = 50
+
+# ---- judge heuristics (shared with bin/jedi so they can be tested)
+# Reckless or dishonest shell patterns. Both halves of every entry must be non-empty:
+# a nameless sin zeroes the turn's XP and costs 15 alignment with nothing to learn from
+# (the ("-- ", "") entry did exactly that through v0.6.6, and "-- " matches
+# `git checkout -- f`, `npm test -- --watch`, `pytest -- tests/` ...).
+SINS = (
+    ("--no-verify",  "bypassed hooks (--no-verify)"),
+    ("push --force", "force-pushed"),
+    ("push -f",      "force-pushed"),
+    ("rm -rf",       "rm -rf"),
+    ("reset --hard", "git reset --hard"),
+    ("sudo ",        "used sudo"),
+    ("|| true",      "swallowed an error (|| true)"),
+    ("--no-tests",   "skipped tests"),
+    ("skip-tests",   "skipped tests"),
+)
+
+def sins_for(cmd):
+    """The sins in one shell command."""
+    return [sin for pat, sin in SINS if pat and sin and pat in cmd]
+
+PRAISE  = re.compile(r"\b(well done|good job|great job|great work|nice work|good work|perfect|excellent|awesome|brilliant|bravo|love it|works? (well|great|perfectly)|working (well|great|perfectly)|thank you|thanks|teşekkür|harika|süper|mükemmel|aferin|eline sağlık)\b|👏|🙏|🔥", re.I)
+# Displeasure must be aimed at the agent. Bare "wrong" and "why did you" also match neutral
+# questions ("what's wrong with the build?", "why did you pick Redis?") and were the
+# second-largest source of dark-side drift, so they are qualified.
+UNHAPPY = re.compile(r"\b(not working|doesn'?t work|isn'?t working|still broken|you broke|"
+                     r"(that'?s|this is|you'?re|it'?s all) wrong|wrong again|"
+                     r"why did you (do|change|delete|remove|break|touch|revert)|"
+                     r"what did you do|stop doing|"
+                     r"çalışmıyor|bozdun|olmadı|(bu|hepsi) yanlış|yanlış yaptın)\b", re.I)
 DARK_TIERS = [   # (threshold, title-transform, colour, rgb)
     (-80, lambda t: "Sith Lord",             124, (160,  20,  20)),
     (-50, lambda t: "Sith Apprentice",       196, (255,  40,  40)),
