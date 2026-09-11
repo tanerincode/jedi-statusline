@@ -221,6 +221,16 @@ def claude_pid():
         pid = ppid
     return None
 
+def pid_alive(pid):
+    """Is this process still running? A session resumed with `claude --resume` keeps its id but gets a new pid."""
+    if not pid: return False
+    if os.name == "nt": return True               # os.kill(pid, 0) would terminate it on Windows
+    try: os.kill(pid, 0)
+    except ProcessLookupError: return False
+    except PermissionError: return True           # alive, just not ours
+    except (OSError, OverflowError, TypeError): return False
+    return True
+
 def git_branch(cwd, st, now):
     cache = st.setdefault("git", {}); ent = cache.get(cwd)
     if ent and now - ent["t"] < 30: return ent["b"]
@@ -288,7 +298,7 @@ def main():
     # ---- XP: (1/cent + 1/line + 5/turn) × tier multiplier
     s = st.setdefault("sessions", {}).setdefault(sid, {"cost": 0.0, "lines": 0, "kyber": 0, "last_prompt": None, "t": now})
     s["agent"] = agent_key
-    if not s.get("pid"): s["pid"] = claude_pid()              # the claude process — lets jedi know who is calling
+    if not pid_alive(s.get("pid")): s["pid"] = claude_pid()   # the claude process — lets jedi know who is calling; re-found after --resume
     dcost  = max(0.0, cost - s["cost"]);      s["cost"]  = cost
     dlines = max(0, (la + lr) - s["lines"]);  s["lines"] = la + lr
     base = int(dcost * 100) + dlines
