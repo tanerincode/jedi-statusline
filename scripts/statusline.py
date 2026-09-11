@@ -86,6 +86,12 @@ TRIALS = [
     ("Trial of Insight",   "review another agent's work and find what they missed"),
 ]
 
+def trial_index(lvl):
+    """Index into TRIALS of the Trial a Padawan at `lvl` faces next, or None. The Padawan band has
+    six levels but there are five Trials: at Padawan ◆◆◆◆◆ all are passed and only Knighthood remains."""
+    i = lvl - PADAWAN
+    return i if 0 <= i < len(TRIALS) else None
+
 QUOTES = [
     "Do. Or do not. There is no try. — Yoda",
     "The Force will be with you. Always. — Obi-Wan",

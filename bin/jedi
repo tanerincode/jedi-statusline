@@ -393,9 +393,11 @@ elif op == "motivate":
     lvl, fixed = S.rank_for(agent, promos); title = NAMES[lvl]
     xp = state.get("agents", {}).get(agent, {}).get("xp", 0)
     mult = S.RANKS[lvl][4]
-    if S.PADAWAN <= lvl < S.KNIGHT:
-        t = S.TRIALS[lvl - S.PADAWAN]
+    if S.trial_index(lvl) is not None:
+        t = S.TRIALS[S.trial_index(lvl)]
         goal = f"Next: the {t[0]} — {t[1]}. Passing all five Trials earns Knighthood; the Council (your orchestrator) decides."
+    elif S.PADAWAN <= lvl < S.KNIGHT:
+        goal = "All five Trials passed. Knighthood is the Council's to grant; keep your blade clean until it does."
     elif fixed:
         goal = "You are a sworn Knight of the Council. Guide the Padawans; advance them with `jedi advance <agent>` when they earn it."
     else:
@@ -411,9 +413,12 @@ elif op == "motivate":
     NEED = {"skill": 2, "courage": 1, "flesh": 1, "spirit": 1, "insight": 1}
     for n, a in state.get("agents", {}).items():
         r, _ = S.rank_for(n, promos)
-        if S.PADAWAN <= r < S.KNIGHT:
-            key = ["skill", "courage", "flesh", "spirit", "insight"][r - S.PADAWAN]
-            if a.get("evidence", {}).get(key, 0) >= NEED[key]: ready.append(f"{n} → {S.TRIALS[r - S.PADAWAN][0]} (evidence ×{a['evidence'][key]}) — `jedi advance {n}`")
+        ti = S.trial_index(r)
+        if ti is not None:
+            key = ["skill", "courage", "flesh", "spirit", "insight"][ti]
+            if a.get("evidence", {}).get(key, 0) >= NEED[key]: ready.append(f"{n} → {S.TRIALS[ti][0]} (evidence ×{a['evidence'][key]}) — `jedi advance {n}`")
+        elif S.PADAWAN <= r < S.KNIGHT:
+            ready.append(f"{n} → Knighthood (all five Trials passed) — `jedi advance {n}`")
     ready_txt = (" Trials awaiting your confirmation: " + "; ".join(ready) + ".") if ready and lvl >= S.KNIGHT else ""
     lj = state.get("agents", {}).get(agent, {}).get("last_job")
     feedback = ""
